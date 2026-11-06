@@ -1,0 +1,5 @@
+# API foundation
+
+Base `/api/v1/`, JSON responses. Public endpoints: `GET /health/` returns `{"status":"ok"}`; `GET /ready/` checks database connectivity and returns ready or HTTP 503; `GET /catalog/` returns `{categories,services,demo}`; `GET /services/{slug}/` returns one active service or 404. Catalog exposes only active services in active categories. `starting_price_paise` is nullable and remains null in the demo seed. No booking, payment, technician or admin write route exists.
+
+DRF defaults to authenticated access, with public routes explicitly marked `AllowAny`. DRF exceptions and Django 404/500 handlers use `{error:{code,message,fields,request_id}}`; the 500 handler returns a generic message. CORS origins are explicit in production. Anonymous throttling is configured; Redis backs the shared cache when configured. Future authentication will use a reviewed HttpOnly session design, deferred OTP and explicit role/object authorization. See planning API contract for future operations; those contracts are not implemented in this phase.

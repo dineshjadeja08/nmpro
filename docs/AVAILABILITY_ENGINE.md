@@ -1,0 +1,5 @@
+# Availability engine
+
+`AppointmentSlot` is configured by zone and service package with start/end instants, capacity, active/blackout flags and minimum lead minutes. Timestamps are stored in UTC by Django; the UI formats appointments in Asia/Kolkata. No automatic slot generation or technician calendar claim is made. An operator must publish coverage, pricing and capacity before the API returns bookable times.
+
+Availability is advisory: it counts confirmed unpaid bookings and active holds whose expiry is in the future, then returns only slots with positive remainder. The hold command serializes capacity decisions by locking the PostgreSQL slot row with `select_for_update` and recounting inside the transaction. Expired holds are ignored immediately; the Celery cleanup task is housekeeping. The production concurrency guarantee still requires PostgreSQL integration tests, which this host could not execute because Docker/PostgreSQL were unavailable. SQLite tests cover business behavior only.

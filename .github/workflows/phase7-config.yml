@@ -1,0 +1,61 @@
+name: Phase 7 configuration checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      production_review:
+        description: "Request the configured production environment approval gate (no deployment)"
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r services/api/requirements-production.lock
+      - run: python -m pip install --no-deps -e ./services/api
+      - run: python manage.py check
+        working-directory: services/api
+      - run: python manage.py makemigrations --check --dry-run
+        working-directory: services/api
+      - run: python -m compileall -q common config domains
+        working-directory: services/api
+      - run: bash -n infrastructure/deployment/deploy-cloud-run.sh infrastructure/deployment/deploy-periodic-job.sh infrastructure/deployment/run-migration.sh infrastructure/deployment/configure-backups.sh infrastructure/deployment/configure-private-bucket.sh
+  frontend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [web, technician, admin, operations]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace @nammapros/${{ matrix.app }}
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.invalid
+          NEXT_PUBLIC_API_BASE_URL: https://api.example.invalid
+          API_BASE_URL: https://api.example.invalid
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f infrastructure/docker/api.Dockerfile -t nammapros-api:check .
+  production-approval-gate:
+    if: github.event_name == 'workflow_dispatch' && inputs.production_review
+    needs: [api, frontend, image]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - run: echo "Approval gate reached. Deploy only through the separately reviewed operator runbook."

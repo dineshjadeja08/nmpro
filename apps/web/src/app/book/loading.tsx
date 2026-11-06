@@ -1,0 +1,1 @@
+export default function Loading() { return <main className="container booking-loading" aria-label="Loading booking page"><span className="ui-skeleton"/><span className="ui-skeleton"/><span className="ui-skeleton"/></main>; }

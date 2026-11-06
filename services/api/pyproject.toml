@@ -1,0 +1,44 @@
+[project]
+name = "nammapros-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "Django>=5.2.17,<5.3",
+  "djangorestframework>=3.18.2,<3.19",
+  "drf-spectacular>=0.29,<0.31",
+  "django-cors-headers>=4.4,<5",
+  "django-redis>=6,<7",
+  "dj-database-url>=2.3,<3",
+  "psycopg[binary]>=3.2,<3.3",
+  "celery>=5.5,<5.7",
+  "redis>=5,<9",
+  "razorpay>=2.0,<3",
+  "reportlab>=4.5,<5",
+  "requests>=2.32,<3",
+  "google-cloud-storage>=3.13,<4",
+  "gunicorn>=23,<24",
+  "sentry-sdk>=2.48,<3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<10", "pytest-django>=4.11,<5", "ruff>=0.9,<1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["common*", "config*", "domains*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

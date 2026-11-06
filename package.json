@@ -1,0 +1,15 @@
+{
+  "name": "nammapros",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "npm@10.9.9",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev -w @nammapros/web",
+    "build": "npm run build -w @nammapros/web",
+    "typecheck": "npm run typecheck -w @nammapros/web",
+    "lint": "npm run lint -w @nammapros/web",
+    "test": "npm run test -w @nammapros/web",
+    "audit": "npm audit --audit-level=high"
+  }
+}

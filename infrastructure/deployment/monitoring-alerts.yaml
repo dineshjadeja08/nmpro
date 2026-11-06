@@ -1,0 +1,29 @@
+# Operator-reviewed Cloud Monitoring alert definitions; do not apply automatically.
+# Windows and thresholds are starting values and should be tuned on staging traffic.
+api_unavailable:
+  source: HTTPS uptime check for /api/v1/ready/
+  threshold: 2 failed checks across 2 locations within 5 minutes
+api_5xx:
+  source: Cloud Run request_count, response_code_class=5xx
+  threshold: 5 requests in 5 minutes
+database_connectivity:
+  source: readiness 503 and Cloud SQL connection errors
+  threshold: 2 failures in 5 minutes
+periodic_job_failure:
+  source: Cloud Run Job failed execution and JSON log message periodic_job_failed
+  threshold: 1 failure in 5 minutes
+payment_webhook_failure:
+  source: HTTP path /api/v1/payments/razorpay/webhook/ with 4xx or 5xx
+  threshold: 3 failures in 5 minutes
+reconciliation_exceptions:
+  source: JSON log message payment_reconciliation_exceptions_open
+  threshold: any nonzero count for 10 minutes
+otp_failures:
+  source: HTTP path /api/v1/auth/otp/verify/ with 400 or 429
+  threshold: 10 failures in 5 minutes
+notification_review:
+  source: JSON log message notification_delivery_review_required
+  threshold: any nonzero count for 10 minutes
+storage_failures:
+  source: 5xx for private document and invoice endpoints plus storage exception logs
+  threshold: 2 failures in 5 minutes

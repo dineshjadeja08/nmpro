@@ -1,0 +1,11 @@
+.git
+node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.local
+**/var
+**/db.sqlite3
+docs
+planning

@@ -1,0 +1,7 @@
+# Phase 2 test results — 2026-11-02
+
+- Backend: 15 pytest tests passed on SQLite. They cover serviceability, capacity rejection, blackout, owner checks, quote and pay-at-visit confirmation, idempotent replay and key conflict, price-change/prepaid rejection, cancellation, rescheduling, state transitions, OTP attempts/cooldown/session and CSRF, address archive/default, hold cleanup, immutable snapshot and outbox deduplication.
+- `ruff check .`, `manage.py check`, and `makemigrations --check --dry-run` passed after the new migrations. The migrations applied to local SQLite.
+- Frontend: 6 Vitest tests passed, including a mocked API-backed three-step booking journey that navigates only after confirmation and CSRF token refresh after login. TypeScript strict check and ESLint passed. The customer `next build` passed and produced `/bookings/[id]`. A local browser smoke check loaded `/book` and verified that no package/appointment can be selected from the unconfigured demonstration catalog.
+- Indexed Python dependencies and production npm dependencies had no known vulnerabilities in scans. The editable local Python package is not on PyPI and was skipped by pip-audit. The Phase 1 moderate development-tool npm advisories remain separately documented.
+- PostgreSQL concurrency tests, Redis/Celery worker integration, real OTP provider delivery, live browser end-to-end booking, OpenAPI contract generation, Playwright, Lighthouse and accessibility audit were **not run or not complete**. SQLite results do not prove PostgreSQL locking behavior.

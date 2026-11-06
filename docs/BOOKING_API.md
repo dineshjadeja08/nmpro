@@ -1,0 +1,7 @@
+# Booking API v1
+
+All routes have the `/api/v1/` prefix and trailing slash. Existing `GET catalog/` and `GET services/{slug}/` remain; added public `GET catalog/categories/`, `GET catalog/services/` (optional `q`), and `GET catalog/services/{slug}/`. Responses include only active services and packages; prices are quoted for a selected address/zone.
+
+Session routes: `GET auth/csrf/`, `POST auth/otp/request/`, `POST auth/otp/verify/`, `GET auth/me/`, `POST auth/logout/`. Address routes: `GET/POST customers/addresses/`, `PATCH/DELETE customers/addresses/{id}/`. Checkout routes: `POST serviceability/check/`, `GET availability/slots/`, `POST checkout/holds/`, `DELETE checkout/holds/{id}/`, `POST checkout/quote/`. Booking routes: `GET/POST bookings/`, `GET bookings/{id}/`, `POST bookings/{id}/cancel/`, `POST bookings/{id}/reschedule/`.
+
+Private routes require a session and filter by customer ownership. POST booking body is `{hold_id,quote_id,accepted_total_paise,terms_accepted:true}` and requires `Idempotency-Key`. Capacity, stale price and booking-state conflicts return 409; expired hold/quote returns 410. Validation uses 400 with the shared error envelope. Booking list uses page-number pagination, 20 records per page. `GET schema/` exists, but automatic response schema inference is incomplete for APIView endpoints; generated TypeScript types are not yet release-ready. The manually typed browser client lives in `apps/web/src/lib/booking-api.ts`.

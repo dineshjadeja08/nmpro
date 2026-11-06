@@ -1,0 +1,1 @@
+export default function Page() { return <main className="container simple-page"><h1>Work with NammaPros</h1><p>Technician onboarding is being prepared. This preview does not collect applications or personal documents.</p></main>; }
