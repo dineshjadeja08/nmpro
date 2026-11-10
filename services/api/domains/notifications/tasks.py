@@ -20,6 +20,7 @@ TEMPLATE_VARIABLES = {
     "BOOKING_PAYMENT_EXPIRED": ("booking_reference",),
     "PAYMENT_SUCCESS": ("booking_reference",),
     "PAYMENT_FAILED": ("booking_reference",),
+    "BALANCE_PAYMENT_COLLECTED": ("booking_reference",),
     "REFUND_INITIATED": ("booking_reference",),
     "REFUND_COMPLETED": ("booking_reference",),
     "TECHNICIAN_APPLICATION_SUBMITTED": ("booking_reference",),
@@ -28,11 +29,33 @@ TEMPLATE_VARIABLES = {
     "TECHNICIAN_SUSPENDED": ("booking_reference",),
     "NEW_JOB_OFFER": ("booking_reference",),
     "TECHNICIAN_ASSIGNED": ("booking_reference",),
+    "TECHNICIAN_REASSIGNED": ("booking_reference",),
+    "TECHNICIAN_EN_ROUTE": ("booking_reference",),
+    "TECHNICIAN_ARRIVED": ("booking_reference",),
+    "IN_PROGRESS": ("booking_reference",),
     "QUOTATION_APPROVAL_REQUIRED": ("booking_reference",),
     "QUOTATION_APPROVED": ("booking_reference",),
     "QUOTATION_REJECTED": ("booking_reference",),
     "JOB_COMPLETED": ("booking_reference",),
 }
+
+
+def resolve_default_channel(preference) -> str:
+    if preference is not None:
+        return (
+            "WHATSAPP"
+            if preference.whatsapp_opt_in
+            else "SMS"
+            if preference.sms_opt_in
+            else "EMAIL"
+            if preference.email_opt_in
+            else "NONE"
+        )
+    if settings.WHATSAPP_ENABLED and settings.WHATSAPP_PROVIDER == "MSG91":
+        return "WHATSAPP"
+    if settings.SMS_PROVIDER == "MSG91":
+        return "SMS"
+    return "SMS"
 
 
 @shared_task
@@ -45,9 +68,7 @@ def process_booking_outbox():
                 continue
             booking = Booking.objects.get(id=event.aggregate_id)
             preference = NotificationPreference.objects.filter(user=booking.user).first()
-            channel = ("WHATSAPP" if preference and preference.whatsapp_opt_in else
-                       "SMS" if preference and preference.sms_opt_in else
-                       "EMAIL" if preference and preference.email_opt_in else "NONE")
+            channel = resolve_default_channel(preference)
             Notification.objects.get_or_create(outbox_event=event, defaults={
                 "recipient": booking.user, "booking": booking, "channel": channel,
                 "event": event.event_type, "template_key": event.event_type,
@@ -84,7 +105,12 @@ def _dispatch(channel, configured, template_map, preference_field, send):
                 continue
             preference = NotificationPreference.objects.filter(user=notification.recipient).first()
             template_name = template_map.get(notification.template_key)
-            if not preference or not getattr(preference, preference_field) or not template_name:
+            opted_in = (
+                getattr(preference, preference_field)
+                if preference is not None
+                else preference_field in ("whatsapp_opt_in", "sms_opt_in")
+            )
+            if not opted_in or not template_name:
                 continue
             if notification.template_key not in TEMPLATE_VARIABLES or not all(
                 key in notification.payload for key in TEMPLATE_VARIABLES[notification.template_key]

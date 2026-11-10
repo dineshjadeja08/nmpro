@@ -385,3 +385,176 @@ def test_admin_lead_address_coordinates_and_conversion(integration_setup):
     assert float(addr.longitude) == 80.2341
 
 
+@pytest.mark.django_db
+def test_public_slots_and_enriched_reviews(integration_setup):
+    from django.utils import timezone
+    from domains.bookings.models import AppointmentSlot, Booking, BookingPriceSnapshot
+    from domains.catalog.models import PricingRule
+
+    pkg = integration_setup["package"]
+    zone = integration_setup["zone"]
+    PricingRule.objects.create(
+        package=pkg,
+        zone=zone,
+        base_paise=64900,
+        payment_policy="PAY_AT_VISIT",
+        is_active=True,
+    )
+    full_slot = AppointmentSlot.objects.create(
+        zone=zone,
+        package=pkg,
+        start_at=timezone.now() + timezone.timedelta(days=1),
+        end_at=timezone.now() + timezone.timedelta(days=1, hours=1),
+        capacity=1,
+        is_active=True,
+    )
+    full_booking = Booking.objects.create(
+        user=integration_setup["customer"],
+        service=integration_setup["service"],
+        package=pkg,
+        address=integration_setup["address"],
+        slot=full_slot,
+        status="CONFIRMED",
+        payment_status="PAID",
+        reference="NP-FULL-001",
+    )
+    BookingPriceSnapshot.objects.create(booking=full_booking, pricing_rule_id=pkg.id, pricing_version=1, lines=[], total_paise=64900)
+
+    client = APIClient()
+    slots_resp = client.get(f"/api/v1/slots/?package_id={pkg.id}&include_full=1")
+    assert slots_resp.status_code == 200, slots_resp.content
+    assert any(s["remaining"] == 0 for s in slots_resp.json()["slots"])
+    assert any(s["remaining"] > 0 for s in slots_resp.json()["slots"])
+
+    booking = Booking.objects.create(
+        user=integration_setup["customer"],
+        service=integration_setup["service"],
+        package=pkg,
+        address=integration_setup["address"],
+        slot=integration_setup["slot"],
+        status="COMPLETED",
+        payment_status="PAID",
+        reference="NP-REV-001",
+    )
+    BookingPriceSnapshot.objects.create(booking=booking, pricing_rule_id=pkg.id, pricing_version=1, lines=[], total_paise=64900)
+
+    client.force_authenticate(user=integration_setup["customer"])
+    rev_post = client.post(
+        f"/api/v1/bookings/{booking.id}/review/",
+        {"rating": 5, "comment": "Very clean service", "tags": ["On time", "Clean work"]},
+        format="json",
+    )
+    assert rev_post.status_code == 201, rev_post.content
+    assert rev_post.json()["tags"] == ["On time", "Clean work"]
+    assert rev_post.json()["area"] == "Adyar"
+
+    svc_reviews = client.get(f"/api/v1/services/{integration_setup['service'].slug}/reviews/")
+    assert svc_reviews.status_code == 200
+    assert svc_reviews.json()["average_rating"] == 5.0
+    assert svc_reviews.json()["rating_breakdown"]["5"] == 1
+    assert len(svc_reviews.json()["results"]) == 1
+
+    cat_resp = client.get("/api/v1/catalog/")
+    assert cat_resp.status_code == 200
+    assert cat_resp.json()["trust_stats"]["average_rating"] == 5.0
+    assert cat_resp.json()["trust_stats"]["review_count"] == 1
+
+
+@pytest.mark.django_db
+def test_firebase_auth_only_for_customers_and_creates_default_preferences(monkeypatch):
+    from django.contrib.auth import get_user_model
+    from domains.administration.models import StaffRole
+    from domains.notifications.models import NotificationPreference
+    from domains.users.models import CustomerProfile
+
+    User = get_user_model()
+    staff_user = User.objects.create_user(username="staff_fb", phone_e164="+919876501010", is_staff=True, is_active=True)
+    StaffRole.objects.create(user=staff_user, role="SUPER_ADMIN", assigned_by=staff_user)
+
+    client = APIClient()
+    staff_resp = client.post("/api/v1/auth/firebase/", {"id_token": "dev-token:+919876501010"}, format="json")
+    assert staff_resp.status_code == 403, staff_resp.content
+
+    cust_resp = client.post("/api/v1/auth/firebase/", {"id_token": "dev-token:+919876502020"}, format="json")
+    assert cust_resp.status_code == 200, cust_resp.content
+    assert cust_resp.json()["role"] == "CUSTOMER"
+
+    customer = User.objects.get(phone_e164="+919876502020")
+    assert CustomerProfile.objects.filter(user=customer).exists()
+    pref = NotificationPreference.objects.get(user=customer)
+    assert pref.sms_opt_in is True
+    assert pref.whatsapp_opt_in is True
+
+
+@pytest.mark.django_db
+def test_msg91_transactional_notifications_dispatch_for_all_lifecycle_events(integration_setup, monkeypatch, settings):
+    from django.contrib.auth import get_user_model
+    from domains.bookings.models import Booking, BookingPriceSnapshot
+    from domains.notifications.models import Notification, OutboxEvent
+    from domains.notifications.tasks import dispatch_sms_notifications, dispatch_whatsapp_notifications, process_booking_outbox
+    from domains.technicians.services import notify
+
+    settings.MSG91_AUTH_KEY = "msg91-test-key"
+    settings.WHATSAPP_ENABLED = True
+    settings.WHATSAPP_PROVIDER = "MSG91"
+    settings.SMS_PROVIDER = "MSG91"
+    templates = {
+        "BOOKING_CONFIRMED": "tmpl_booking_confirmed",
+        "PAYMENT_SUCCESS": "tmpl_payment_success",
+        "TECHNICIAN_ASSIGNED": "tmpl_tech_assigned",
+        "TECHNICIAN_EN_ROUTE": "tmpl_tech_en_route",
+    }
+    settings.WHATSAPP_TEMPLATES = templates
+    settings.SMS_TEMPLATES = templates
+
+    wa_calls = []
+    sms_calls = []
+    monkeypatch.setattr(
+        "domains.notifications.providers.msg91_whatsapp.MSG91WhatsAppProvider.send_template",
+        lambda self, phone_e164, template_name, booking_reference: wa_calls.append(
+            (phone_e164, template_name, booking_reference)
+        ) or {"type": "success"},
+    )
+    monkeypatch.setattr(
+        "domains.notifications.providers.msg91_sms.MSG91SMSProvider.send_template",
+        lambda self, phone_e164, template_id, booking_reference: sms_calls.append(
+            (phone_e164, template_id, booking_reference)
+        ) or {"type": "success"},
+    )
+
+    fresh_customer = get_user_model().objects.create_user(username="fresh_cust", phone_e164="+919811122233", is_active=True)
+    booking = Booking.objects.create(
+        user=fresh_customer,
+        service=integration_setup["service"],
+        package=integration_setup["package"],
+        address=integration_setup["address"],
+        slot=integration_setup["slot"],
+        status="CONFIRMED",
+        payment_status="ADVANCE_PAID",
+        reference="NP-MSG91-001",
+    )
+    BookingPriceSnapshot.objects.create(
+        booking=booking, pricing_rule_id=integration_setup["package"].id, pricing_version=1, lines=[], total_paise=99900
+    )
+
+    # 1. Technician lifecycle notification without pre-existing NotificationPreference row
+    notify(fresh_customer, "TECHNICIAN_ASSIGNED", booking=booking)
+    notify(fresh_customer, "TECHNICIAN_EN_ROUTE", booking=booking)
+
+    # 2. Outbox booking confirmed + balance/payment success
+    OutboxEvent.objects.create(event_type="BOOKING_CONFIRMED", aggregate_id=booking.id, payload={"booking_id": str(booking.id)})
+    OutboxEvent.objects.create(event_type="PAYMENT_SUCCESS", aggregate_id=booking.id, payload={"booking_id": str(booking.id), "type": "BALANCE"})
+    process_booking_outbox()
+
+    # None of the queued notifications should fall back to channel="NONE"
+    notifications = list(Notification.objects.filter(recipient=fresh_customer))
+    assert len(notifications) >= 4
+    assert all(n.channel != "NONE" for n in notifications)
+
+    dispatch_whatsapp_notifications()
+    dispatch_sms_notifications()
+    assert len(wa_calls) + len(sms_calls) >= 4
+
+
+
+

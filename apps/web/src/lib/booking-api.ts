@@ -8,7 +8,57 @@ export type LocationSuggestion = { id: string; description: string; main_text: s
 export type ResolvedLocation = { formatted_address: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; latitude: number | null; longitude: number | null };
 export type ServiceAreaInfo = { id: string; name: string; city: string; state: string; postal_code: string };
 export type ServiceAreaCheckResult = { is_supported: boolean; supported: boolean; service_area: ServiceAreaInfo | null; areas: Array<{ id: string; name: string; slug: string; postal_code: string }> };
-export type Booking = { id: string; reference: string; status: string; payment_status: string; payment_expires_at?: string | null; invoice_available?: boolean; payment_attempt_unresolved?: boolean; version: number; problem_description?: string; offline_collected_paise?: number; start_otp_code?: string; technician?: { name: string; phone?: string; status: string } | null; can_review?: boolean; review?: { rating: number; comment: string } | null; service: string; package: string; package_id: string; address_id: string; can_cancel: boolean; can_reschedule: boolean; address: { label: string; line_1: string; locality: string; city: string; postal_code: string }; slot: { start_at: string; end_at: string }; price: { lines: { code: string; amount_paise: number }[]; total_paise: number; advance_paise?: number; remaining_balance_paise?: number; currency: string }; events: { from_status: string; to_status: string; created_at: string }[] };
+export type Booking = {
+  id: string;
+  reference: string;
+  status: string;
+  payment_status: string;
+  payment_expires_at?: string | null;
+  invoice_available?: boolean;
+  payment_attempt_unresolved?: boolean;
+  version: number;
+  problem_description?: string;
+  offline_collected_paise?: number;
+  start_otp_code?: string;
+  technician?: {
+    name: string;
+    phone?: string;
+    status: string;
+    rating?: number | null;
+    completed_jobs?: number;
+    photo_url?: string | null;
+  } | null;
+  can_review?: boolean;
+  review?: { rating: number; comment: string; tags?: string[]; photo_url?: string | null } | null;
+  service: string;
+  package: string;
+  package_id: string;
+  address_id: string;
+  can_cancel: boolean;
+  can_reschedule: boolean;
+  address: { label: string; line_1: string; locality: string; city: string; postal_code: string };
+  slot: { start_at: string; end_at: string };
+  price: { lines: { code: string; amount_paise: number }[]; total_paise: number; advance_paise?: number; remaining_balance_paise?: number; currency: string };
+  events: { from_status: string; to_status: string; created_at: string }[];
+};
+export type ServiceReviewItem = {
+  id: string;
+  rating: number;
+  comment: string;
+  tags?: string[];
+  photo_url?: string | null;
+  customer_name: string;
+  area?: string;
+  technician_name?: string;
+  service_name?: string;
+  created_at: string;
+};
+export type ServiceReviewSummary = {
+  average_rating: number | null;
+  review_count: number;
+  rating_breakdown?: Record<string, number>;
+  results: ServiceReviewItem[];
+};
 export type JobQuotation = { id: string; status: string; labour_paise: number; parts_paise: number; tax_paise: number; total_paise: number; valid_until: string; items: { description: string; quantity: number; unit_paise: number; total_paise: number }[] };
 
 const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -31,12 +81,15 @@ export async function bookingRequest<T>(path: string, method = "GET", body?: unk
     if (method !== "GET" && !csrfToken) {
       await refreshCsrf();
     }
+    const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
     const response = await fetch(`${base}/api/v1${path}`, {
       method, credentials: "include", signal: controller.signal, cache: "no-store",
-      headers: { ...(body ? { "Content-Type": "application/json" } : {}),
+      headers: {
+        ...(!isFormData && body ? { "Content-Type": "application/json" } : {}),
         ...(method !== "GET" ? { "X-CSRFToken": csrfToken || decodeURIComponent(cookie("csrftoken")) } : {}),
-        ...(key ? { "Idempotency-Key": key } : {}) },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+        ...(key ? { "Idempotency-Key": key } : {}),
+      },
+      ...(body ? { body: isFormData ? body : JSON.stringify(body) } : {}),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
@@ -54,12 +107,6 @@ export async function bookingRequest<T>(path: string, method = "GET", body?: unk
 
 export const bookingApi = {
   me: () => bookingRequest<{ id: number; phone_e164: string }>("/auth/me/"),
-  otpRequest: (phone_e164: string) => bookingRequest<{ challenge_id: string; expires_at: string; development_code?: string }>("/auth/otp/request/", "POST", { phone_e164 }),
-  otpVerify: async (phone_e164: string, challenge_id: string, code: string) => {
-    const result = await bookingRequest<{ id: number }>("/auth/otp/verify/", "POST", { phone_e164, challenge_id, code });
-    await refreshCsrf();
-    return result;
-  },
   firebaseAuth: async (idToken: string) => {
     const result = await bookingRequest<{ id: number; phone_e164: string }>("/auth/firebase/", "POST", { id_token: idToken });
     await refreshCsrf();
@@ -72,13 +119,33 @@ export const bookingApi = {
   archiveAddress: (id: string) => bookingRequest<void>(`/customers/addresses/${id}/`, "DELETE"),
   serviceability: (package_id: string, address_id: string) => bookingRequest<{ supported: boolean; reason: string | null }>("/serviceability/check/", "POST", { package_id, address_id }),
   slots: (package_id: string, address_id: string, start: string, end: string) => bookingRequest<{ slots: Slot[] }>(`/availability/slots/?${new URLSearchParams({ package_id, address_id, start, end })}`),
+  publicSlots: (params: { package_id?: string; service_id?: string; postal_code?: string; city?: string; include_full?: boolean }) => {
+    const query = new URLSearchParams();
+    if (params.package_id) query.set("package_id", params.package_id);
+    if (params.service_id) query.set("service_id", params.service_id);
+    if (params.postal_code) query.set("postal_code", params.postal_code);
+    if (params.city) query.set("city", params.city);
+    if (params.include_full) query.set("include_full", "1");
+    return bookingRequest<{ slots: Slot[] }>(`/slots/?${query}`);
+  },
   hold: (package_id: string, address_id: string, slot_id: string) => bookingRequest<Hold>("/checkout/holds/", "POST", { package_id, address_id, slot_id }),
   release: (id: string) => bookingRequest<void>(`/checkout/holds/${id}/`, "DELETE"),
   quote: (hold_id: string) => bookingRequest<Quote>("/checkout/quote/", "POST", { hold_id }),
   confirm: (hold_id: string, quote_id: string, accepted_total_paise: number, key: string, problem_description = "") => bookingRequest<Booking>("/bookings/", "POST", { hold_id, quote_id, accepted_total_paise, terms_accepted: true, problem_description }, key),
   bookings: (page = 1) => bookingRequest<{ count: number; results: Booking[] }>(`/bookings/?page=${page}`),
   booking: (id: string) => bookingRequest<Booking>(`/bookings/${id}/`),
-  submitReview: (id: string, rating: number, comment: string) => bookingRequest<{ id: string; rating: number; comment: string }>(`/bookings/${id}/review/`, "POST", { rating, comment }),
+  serviceReviews: (serviceIdOrSlug: string) => bookingRequest<ServiceReviewSummary>(`/services/${encodeURIComponent(serviceIdOrSlug)}/reviews/`),
+  submitReview: (id: string, rating: number, comment: string, tags: string[] = [], photo?: File | null) => {
+    if (photo && typeof FormData !== "undefined") {
+      const fd = new FormData();
+      fd.append("rating", String(rating));
+      fd.append("comment", comment);
+      fd.append("tags", JSON.stringify(tags));
+      fd.append("photo", photo);
+      return bookingRequest<ServiceReviewItem>(`/bookings/${id}/review/`, "POST", fd);
+    }
+    return bookingRequest<ServiceReviewItem>(`/bookings/${id}/review/`, "POST", { rating, comment, tags });
+  },
   quotations: (id: string) => bookingRequest<{ quotations: JobQuotation[] }>(`/bookings/${id}/quotations/`),
   quotationDecision: (id: string, quoteId: string, action: "approve" | "reject") => bookingRequest<JobQuotation>(`/bookings/${id}/quotations/${quoteId}/${action}/`, "POST"),
   invoiceUrl: (id: string) => `${base}/api/v1/bookings/${encodeURIComponent(id)}/invoice/`,

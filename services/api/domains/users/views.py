@@ -129,12 +129,20 @@ class OTPVerifyView(APIView):
 
 @method_decorator(csrf_protect, name="dispatch")
 class FirebaseAuthView(APIView):
+    """Customer-only authentication via Firebase Phone Auth OTP."""
+
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "otp_verify"
 
     def post(self, request):
+        from domains.administration.models import StaffRole
+        from domains.notifications.models import NotificationPreference
+        from domains.operations.models import OperationsGrant
+        from domains.payments.models import FinanceGrant
+        from domains.technicians.models import TechnicianAdminGrant
+
         id_token = request.data.get("id_token")
         if not id_token:
             raise ValidationError({"id_token": ["Firebase ID token is required."]})
@@ -150,10 +158,26 @@ class FirebaseAuthView(APIView):
         phone = valid_phone(phone)
         User = get_user_model()
         user, _ = User.objects.get_or_create(phone_e164=phone, defaults={"username": phone})
+        if not user.is_active:
+            raise PermissionDenied("This customer account is inactive.")
+        if (
+            user.is_staff
+            or user.is_superuser
+            or StaffRole.objects.filter(user=user).exists()
+            or OperationsGrant.objects.filter(user=user).exists()
+            or FinanceGrant.objects.filter(user=user).exists()
+            or TechnicianAdminGrant.objects.filter(user=user).exists()
+        ):
+            raise PermissionDenied("Firebase OTP login is only for customer accounts. Staff must use the staff portal login.")
+        CustomerProfile.objects.get_or_create(user=user)
+        NotificationPreference.objects.get_or_create(
+            user=user,
+            defaults={"sms_opt_in": True, "whatsapp_opt_in": True, "email_opt_in": True},
+        )
         login(request._request, user, backend="django.contrib.auth.backends.ModelBackend")
         request._request.session["privileged_verified_at"] = timezone.now().timestamp()
         tokens = issue_token_pair(user)
-        return Response({"id": user.pk, "phone_e164": phone, **tokens})
+        return Response({"id": user.pk, "phone_e164": phone, "role": "CUSTOMER", **tokens})
 
 
 class PasswordLoginView(APIView):

@@ -87,7 +87,7 @@ def serviceable(package: ServicePackage, address: Address) -> Zone | None:
     return zones.first()
 
 
-def available_slots(package: ServicePackage, address: Address, start, end):
+def available_slots(package: ServicePackage, address: Address, start, end, include_full: bool = False):
     zone = serviceable(package, address)
     if not zone:
         return []
@@ -108,14 +108,14 @@ def available_slots(package: ServicePackage, address: Address, start, end):
             continue
         active_holds = SlotHold.objects.filter(slot=slot, status="ACTIVE", expires_at__gt=now).count()
         confirmed = occupied_bookings(slot, now)
-        remaining = slot.capacity - active_holds - confirmed
+        remaining = max(0, slot.capacity - active_holds - confirmed)
         day = timezone.localtime(slot.start_at).date()
         if day not in pilot_remaining_by_day:
             pilot_remaining_by_day[day] = pilot_remaining(slot, now)
         pilot_available = pilot_remaining_by_day[day]
         if pilot_available is not None:
-            remaining = min(remaining, pilot_available)
-        if remaining > 0:
+            remaining = max(0, min(remaining, pilot_available))
+        if remaining > 0 or include_full:
             result.append({"id": str(slot.id), "start_at": slot.start_at, "end_at": slot.end_at,
                            "remaining": remaining, "version": slot.version})
     return result
@@ -251,6 +251,23 @@ def serialize_booking(booking):
         (booking.status in ("COMPLETED", "CLOSED") or (assignment and assignment.status == "SERVICE_COMPLETED"))
         and review is None
     )
+    tech_payload = None
+    if assignment and booking.status not in ("CANCELLED", "EXPIRED"):
+        from django.db.models import Avg
+        from domains.catalog.models import Review
+        from domains.technicians.models import JobAssignment
+
+        tech_profile = assignment.technician
+        tech_rating = Review.objects.filter(technician=tech_profile, is_visible=True).aggregate(avg=Avg("rating"))["avg"]
+        completed_jobs = JobAssignment.objects.filter(technician=tech_profile, status="SERVICE_COMPLETED").count()
+        tech_payload = {
+            "name": tech_profile.display_name,
+            "phone": tech_profile.user.phone_e164,
+            "status": assignment.status,
+            "rating": round(float(tech_rating), 1) if tech_rating else None,
+            "completed_jobs": completed_jobs,
+            "photo_url": None,
+        }
     return {"id": str(booking.id), "reference": booking.reference, "status": booking.status,
             "payment_status": booking.payment_status, "payment_expires_at": booking.payment_expires_at,
             "invoice_available": bool(invoice and invoice.status == "ISSUED" and invoice.document),
@@ -261,17 +278,9 @@ def serialize_booking(booking):
             "problem_description": booking.problem_description,
             "offline_collected_paise": booking.offline_collected_paise,
             "start_otp_code": booking.start_otp_code if not work_started else "",
-            "technician": (
-                {
-                    "name": assignment.technician.display_name,
-                    "phone": assignment.technician.user.phone_e164,
-                    "status": assignment.status,
-                }
-                if assignment and booking.status not in ("CANCELLED", "EXPIRED")
-                else None
-            ),
+            "technician": tech_payload,
             "can_review": can_review,
-            "review": {"rating": review.rating, "comment": review.comment} if review else None,
+            "review": {"rating": review.rating, "comment": review.comment, "tags": review.tags or [], "photo_url": review.photo_display} if review else None,
             "service": booking.service.name, "package": booking.package.name,
             "package_id": str(booking.package_id), "address_id": str(booking.address_id),
             "can_cancel": can_cancel, "can_reschedule": can_reschedule,

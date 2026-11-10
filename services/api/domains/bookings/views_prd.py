@@ -37,14 +37,25 @@ class PublicSlotsView(APIView):
 
         postal_code = (request.query_params.get("postal_code") or "").strip()
         city = (request.query_params.get("city") or "").strip()
-        if not postal_code or not city:
-            raise serializers.ValidationError("postal_code and city are required.")
-
-        address = Address(user_id=0, line_1="Lookup", locality=city, city=city, postal_code=postal_code)
+        include_full = request.query_params.get("include_full") in ("1", "true", "True")
         now = timezone.now()
         start = now
         end = now + timedelta(days=14)
-        return Response({"slots": available_slots(package, address, start, end)})
+
+        if postal_code and city:
+            address = Address(user_id=0, line_1="Lookup", locality=city, city=city, postal_code=postal_code)
+            slots = available_slots(package, address, start, end, include_full=include_full)
+            return Response({"slots": slots})
+
+        from domains.locations.models import Zone
+        zones = Zone.objects.filter(is_active=True, city__is_active=True, pricingrule__package=package, pricingrule__is_active=True)
+        if city:
+            zones = zones.filter(city__name__iexact=city)
+        first_zone = zones.first()
+        if not first_zone:
+            return Response({"slots": []})
+        address = Address(user_id=0, line_1="Lookup", locality=first_zone.name, city=first_zone.city.name, postal_code=first_zone.postal_code)
+        return Response({"slots": available_slots(package, address, start, end, include_full=include_full)})
 
 
 class BookingStartOTPView(APIView):

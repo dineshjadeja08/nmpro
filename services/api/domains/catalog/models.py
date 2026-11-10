@@ -80,6 +80,8 @@ class Service(UUIDStampedModel):
     inclusions = models.JSONField(default=list)
     exclusions = models.JSONField(default=list)
     faq_items = models.JSONField(default=list)
+    process_steps = models.JSONField(default=list, blank=True)
+    spare_parts_rates = models.JSONField(default=list, blank=True)
     seo_title = models.CharField(max_length=160, blank=True, default="")
     seo_description = models.CharField(max_length=320, blank=True, default="")
     sort_order = models.PositiveSmallIntegerField(default=0)
@@ -157,6 +159,8 @@ class ServicePackage(UUIDStampedModel):
     inclusions = models.JSONField(default=list)
     exclusions = models.JSONField(default=list)
     skill_code = models.CharField(max_length=60)
+    original_price_paise = models.PositiveBigIntegerField(null=True, blank=True)
+    is_most_booked = models.BooleanField(default=False)
     is_active = models.BooleanField(default=False)
 
 
@@ -249,9 +253,20 @@ class Review(UUIDStampedModel):
     technician = models.ForeignKey("technicians.TechnicianProfile", on_delete=models.PROTECT, null=True, blank=True, related_name="reviews")
     rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField(max_length=2000, blank=True, default="")
+    tags = models.JSONField(default=list, blank=True)
+    photo = models.ImageField(upload_to="reviews/photos/", blank=True, null=True)
+    photo_url = models.URLField(max_length=500, blank=True, default="")
     is_visible = models.BooleanField(default=True)
     moderated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="moderated_reviews")
     moderation_note = models.CharField(max_length=240, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]
+
+    @property
+    def photo_display(self):
+        if self.photo_url:
+            return self.photo_url
+        if self.photo and getattr(self.photo, "name", ""):
+            return f"/api/v1/catalog/reviews/{self.id}/photo/"
+        return None

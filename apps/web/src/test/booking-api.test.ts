@@ -15,7 +15,7 @@ describe("booking API session security", () => {
       return new Response(JSON.stringify(replies.shift()), { status: 200, headers: { "Content-Type": "application/json" } });
     }));
     const { bookingApi } = await import("@/lib/booking-api");
-    await bookingApi.otpVerify("+919876543210", "challenge", "123456");
+    await bookingApi.firebaseAuth("firebase-id-token");
     await bookingApi.createAddress({ label: "Home", contact_name: "Test", contact_phone: "", house_flat: "1",
       street: "Test Street", locality: "Test", city: "Test", state: "Tamil Nadu", postal_code: "600004",
       landmark: "", is_default: true });

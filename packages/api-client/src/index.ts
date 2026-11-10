@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AvailabilityResponse, CatalogResponse, Service, ServiceCategory, ServiceabilityRequest } from "@nammapros/types";
+import type { ApiErrorBody, AvailabilityResponse, CatalogResponse, PublicReview, Service, ServiceCategory, ServiceabilityRequest } from "@nammapros/types";
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number, public readonly code: string) { super(message); }
@@ -30,6 +30,12 @@ export function createApiClient(baseUrl: string, timeoutMs = 6000) {
       request<{ category: ServiceCategory; service: Service; related_services: Service[] }>(
         `/services/${encodeURIComponent(categorySlug)}/${encodeURIComponent(serviceSlug)}/`
       ),
+    serviceReviews: (serviceIdOrSlug: string) =>
+      request<{ average_rating: number | null; review_count: number; rating_breakdown?: Record<string, number>; results: PublicReview[] }>(
+        `/services/${encodeURIComponent(serviceIdOrSlug)}/reviews/`
+      ),
+    publicReviews: () =>
+      request<{ average_rating: number | null; review_count: number; results: PublicReview[] }>("/reviews/"),
     serviceability: (body: ServiceabilityRequest) => request<{ supported: boolean; zone_id: string | null }>("/serviceability/check/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     availability: (params: URLSearchParams) => request<AvailabilityResponse>(`/availability/?${params}`),
   };

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { ApiError } from "@nammapros/api-client";
+import type { Service, ServiceCategory } from "@nammapros/types";
 import { ServiceCard } from "@/components/service-card";
 import { ServiceImage } from "@/components/service-image";
 import { api } from "@/lib/catalog";
@@ -32,11 +33,52 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
-export default async function CategoryOrServicePage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
-
+async function resolveCategoryOrService(slug: string): Promise<
+  | { kind: "category"; category: ServiceCategory; services: Service[] }
+  | { kind: "service"; service: Service }
+  | { kind: "not_found" }
+  | { kind: "unavailable" }
+> {
   try {
     const { category, services } = await api.categoryDetail(slug);
+    return { kind: "category", category, services };
+  } catch (catError) {
+    if (!(catError instanceof ApiError && catError.status === 404)) {
+      return { kind: "unavailable" };
+    }
+  }
+
+  try {
+    const service = await api.service(slug);
+    return { kind: "service", service };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return { kind: "not_found" };
+    }
+    return { kind: "unavailable" };
+  }
+}
+
+export default async function CategoryOrServicePage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const resolved = await resolveCategoryOrService(slug);
+
+  if (resolved.kind === "not_found") notFound();
+
+  if (resolved.kind === "unavailable") {
+    return (
+      <main className="container simple-page">
+        <h1>Service unavailable</h1>
+        <p>The catalog could not be loaded right now.</p>
+        <Link className="button button-outline page-actions" href="/services">
+          Back to services
+        </Link>
+      </main>
+    );
+  }
+
+  if (resolved.kind === "category") {
+    const { category, services } = resolved;
     const bannerSrc = category.banner_is_active !== false ? getCategoryBannerSrc(category) : null;
     const showBannerSection =
       category.banner_is_active !== false &&
@@ -46,16 +88,16 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
       <main>
         {showBannerSection ? (
           bannerSrc ? (
-            <section className="relative overflow-hidden bg-slate-900 text-white">
+            <section className="relative overflow-hidden bg-[#1C1917] text-white">
               <div className="relative aspect-[16/5] min-h-[220px] max-h-[420px] w-full">
                 <ServiceImage src={bannerSrc} alt={category.banner_title || category.name} priority />
-                <div className="absolute inset-0 bg-gradient-to-r from-slate-950/85 via-slate-900/60 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-r from-[#1C1917]/85 via-[#1C1917]/55 to-transparent" />
                 <div className="container relative z-10 flex h-full flex-col justify-center py-8">
                   <nav className="breadcrumbs mb-3 text-white/80" aria-label="Breadcrumb">
                     <Link href="/" className="text-white/85">Home</Link> /{" "}
                     <Link href="/services" className="text-white/85">Services</Link> / {category.name}
                   </nav>
-                  <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">
+                  <h1 className="font-serif text-3xl font-bold tracking-tight text-white sm:text-4xl">
                     {category.banner_title || `${category.name} Service`}
                   </h1>
                   {(category.banner_subtitle || category.description) && (
@@ -70,7 +112,7 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
                         className="button button-primary inline-flex items-center gap-2"
                       >
                         <span>{category.banner_button_text}</span>
-                        <ArrowRight size={16} />
+                        <ArrowRight size={16} strokeWidth={1.5} />
                       </Link>
                     </div>
                   )}
@@ -115,8 +157,8 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
           <div className="section-heading mb-6">
             <div>
               <span className="section-kicker">{category.name.toUpperCase()} SERVICES</span>
-              <h2 className="text-2xl font-bold text-slate-900">
-                Available Sub-Services ({services.length})
+              <h2 className="font-serif text-2xl font-bold text-[#1C1917]">
+                Available services ({services.length})
               </h2>
             </div>
           </div>
@@ -135,37 +177,9 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
         </section>
       </main>
     );
-  } catch (catError) {
-    if (!(catError instanceof ApiError && catError.status === 404)) {
-      return (
-        <main className="container simple-page">
-          <h1>Service unavailable</h1>
-          <p>The catalog could not be loaded right now.</p>
-          <Link className="button button-outline page-actions" href="/services">
-            Back to services
-          </Link>
-        </main>
-      );
-    }
   }
 
-  // Fallback for direct flat service slug (/services/<service-slug>)
-  let service;
-  try {
-    service = await api.service(slug);
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 404) notFound();
-    return (
-      <main className="container simple-page">
-        <h1>Service unavailable</h1>
-        <p>The catalog could not be loaded right now.</p>
-        <Link className="button button-outline page-actions" href="/services">
-          Back to services
-        </Link>
-      </main>
-    );
-  }
-
+  const { service } = resolved;
   const mainImg = serviceMainImage(service);
   return (
     <main>
@@ -182,24 +196,24 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
       <div className="container detail-grid">
         <div>
           {mainImg && (
-            <div className="relative mb-6 aspect-[3/2] w-full overflow-hidden rounded-2xl">
+            <div className="relative mb-6 aspect-[16/9] w-full overflow-hidden rounded-[20px]">
               <ServiceImage src={mainImg} alt={service.name} />
             </div>
           )}
           {service.description && (
             <div
-              className="mb-6 prose prose-sm max-w-none text-slate-700"
+              className="prose prose-sm mb-6 max-w-none text-[#57534E]"
               dangerouslySetInnerHTML={{ __html: service.description }}
             />
           )}
           <Link className="button button-primary page-actions" href={`/book?service=${service.slug}`}>
-            Start booking
+            Pick a slot &amp; book
           </Link>
         </div>
-        <aside className="detail-panel">
+        <aside className="detail-panel h-fit">
           <h2>Before you book</h2>
-          <p>{formatStartingPrice(service)}</p>
-          {service.price_note && <p className="text-xs text-slate-500">{service.price_note}</p>}
+          <p className="mt-2 text-lg font-bold text-[#800020]">{formatStartingPrice(service)}</p>
+          {service.price_note && <p className="mt-1 text-xs text-[#57534E]">{service.price_note}</p>}
         </aside>
       </div>
     </main>

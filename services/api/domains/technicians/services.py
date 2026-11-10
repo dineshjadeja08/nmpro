@@ -60,10 +60,10 @@ def profile_for(user, verified=False):
 
 
 def notify(user, event, booking=None):
+    from domains.notifications.tasks import resolve_default_channel
+
     preference = NotificationPreference.objects.filter(user=user).first()
-    channel = ("WHATSAPP" if preference and preference.whatsapp_opt_in else
-               "SMS" if preference and preference.sms_opt_in else
-               "EMAIL" if preference and preference.email_opt_in else "NONE")
+    channel = resolve_default_channel(preference)
     Notification.objects.create(recipient=user, booking=booking, channel=channel, event=event,
                                 template_key=event, payload={"booking_reference": booking.reference if booking else ""},
                                 status="BLOCKED_CONFIGURATION")

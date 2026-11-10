@@ -1,22 +1,56 @@
 import type { Metadata } from "next";
-import { Nunito, Poppins } from "next/font/google";
+import { Fraunces, Inter } from "next/font/google";
 import type { ReactNode } from "react";
+import { BookingCartDrawer } from "@/components/booking-cart-drawer";
+import { BookingCartProvider } from "@/components/booking-cart-provider";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { LocationProvider } from "@/components/location-provider";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import "./globals.css";
 
-const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-heading", display: "swap" });
-const nunito = Nunito({ subsets: ["latin"], variable: "--font-body", display: "swap" });
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-heading",
+  display: "swap",
+});
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-body",
+  display: "swap",
+});
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: { default: "nammapros. | Home services made clearer", template: "%s | nammapros." },
-  description: "Explore appliance repairs, electrical and plumbing services with a simpler path to booking. Service availability is being prepared.",
+  description:
+    "Namma area, namma pros. Book verified home technicians across Chennai and Tamil Nadu with upfront pricing and a 30-day warranty.",
   alternates: { canonical: "/" },
-  openGraph: { title: "nammapros. | Your Home. Our Expertise.", description: "A clearer way to find home services.", siteName: "nammapros.", type: "website" },
+  openGraph: {
+    title: "nammapros. | What’s not working at home?",
+    description: "Pick, schedule, relax — verified pros at your doorstep in Chennai & Tamil Nadu.",
+    siteName: "nammapros.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="en" className={`${poppins.variable} ${nunito.variable}`}><body><LocationProvider><Header/>{children}<Footer/></LocationProvider></body></html>;
+  return (
+    <html lang="en" className={`${fraunces.variable} ${inter.variable}`}>
+      <body className="pb-16 md:pb-0">
+        <LocationProvider>
+          <BookingCartProvider>
+            <Header />
+            {children}
+            <Footer />
+            <BookingCartDrawer />
+            <MobileBottomNav />
+          </BookingCartProvider>
+        </LocationProvider>
+      </body>
+    </html>
+  );
 }

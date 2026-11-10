@@ -30,10 +30,14 @@ type FirebaseWindow = Window & {
       (): {
         signInWithPhoneNumber: (phone: string, verifier: unknown) => Promise<FirebaseConfirmationResult>;
       };
-      RecaptchaVerifier: new (container: string, options: Record<string, unknown>, auth?: unknown) => unknown;
+      RecaptchaVerifier: new (container: string, options: Record<string, unknown>, auth?: unknown) => {
+        clear?: () => void;
+      };
     };
   };
 };
+
+let recaptchaVerifierHolder: { clear?: () => void } | null = null;
 
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -80,9 +84,26 @@ export async function sendPhoneVerificationCode(
   try {
     const firebase = await ensureFirebaseLoaded();
     const auth = firebase.auth();
-    const verifier = new firebase.auth.RecaptchaVerifier(recaptchaContainerId, {
-      size: "invisible",
-    }, auth);
+    if (recaptchaVerifierHolder?.clear) {
+      try {
+        recaptchaVerifierHolder.clear();
+      } catch {
+        // Ignore cleanup failures from stale reCAPTCHA widgets
+      }
+      recaptchaVerifierHolder = null;
+    }
+    const container = document.getElementById(recaptchaContainerId);
+    if (container) {
+      container.innerHTML = "";
+    }
+    const verifier = new firebase.auth.RecaptchaVerifier(
+      recaptchaContainerId,
+      {
+        size: "invisible",
+      },
+      auth
+    );
+    recaptchaVerifierHolder = verifier;
 
     const confirmationResult = await auth.signInWithPhoneNumber(phoneNumber, verifier);
     confirmationResultHolder = confirmationResult;
