@@ -23,6 +23,15 @@ class NotificationPreference(UUIDStampedModel):
     whatsapp_opt_in = models.BooleanField(default=False)
     sms_opt_in = models.BooleanField(default=False)
     email_opt_in = models.BooleanField(default=False)
+    push_opt_in = models.BooleanField(default=True)
+
+
+class DeviceToken(UUIDStampedModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="device_tokens")
+    platform = models.CharField(max_length=16, choices=[(p, p) for p in ("WEB", "ANDROID", "IOS")])
+    token = models.CharField(max_length=512, unique=True)
+    is_active = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
 
 
 class OutboxEvent(UUIDStampedModel):

@@ -1,5 +1,7 @@
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Avg, Count
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -11,7 +13,7 @@ from rest_framework.views import APIView
 
 from domains.audit.models import AuditLog
 from domains.bookings.models import Booking
-from domains.catalog.models import ServicePackage
+from domains.catalog.models import Review, ServicePackage
 from domains.locations.models import Zone
 from domains.notifications.models import Notification
 
@@ -21,6 +23,7 @@ from .models import (
     JobQuotation,
     TechnicianAdminGrant,
     TechnicianAvailability,
+    TechnicianCompanyMember,
     TechnicianDocument,
     TechnicianProfile,
     TechnicianServiceZone,
@@ -43,6 +46,7 @@ from .services import (
     submit_inspection,
     submit_quotation,
     transition,
+    verify_start_otp,
 )
 
 
@@ -244,6 +248,15 @@ class TimeOffInput(serializers.Serializer):
 class TechnicianTimeOffView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get(self, request):
+        profile = profile_for(request.user)
+        rows = TechnicianTimeOff.objects.filter(technician=profile).order_by("-created_at")
+        return Response({"results": [
+            {"id": str(t.id), "start_at": t.start_at, "end_at": t.end_at, "reason": t.reason,
+             "status": t.status, "review_note": t.review_note}
+            for t in rows
+        ]})
+
     def post(self, request):
         data = TimeOffInput(data=request.data)
         data.is_valid(raise_exception=True)
@@ -257,7 +270,7 @@ class TechnicianTimeOffView(APIView):
                 booking__slot__end_at__gt=values["start_at"]).exclude(status__in=["SERVICE_COMPLETED", "CANCELLED"]).exists():
                 raise JobConflict("Time off overlaps an assigned job.")
             time_off = TechnicianTimeOff.objects.create(technician=profile, **values)
-        return Response({"id": str(time_off.id)}, status=201)
+        return Response({"id": str(time_off.id), "status": time_off.status}, status=201)
 
 
 class TechnicianDocumentView(APIView):
@@ -267,7 +280,7 @@ class TechnicianDocumentView(APIView):
     def post(self, request):
         profile = profile_for(request.user)
         kind = request.data.get("kind")
-        if kind not in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER"):
+        if kind not in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT"):
             raise serializers.ValidationError("Choose a document kind.")
         upload = request.FILES.get("file")
         if not upload or upload.size > 5 * 1024 * 1024 or upload.size < 1:
@@ -280,13 +293,13 @@ class TechnicianDocumentView(APIView):
         if not content_type or (kind == "PROFILE_PHOTO" and content_type == "application/pdf"):
             raise serializers.ValidationError("Use a PDF, JPEG or PNG file.")
         assignment = None
-        if kind in ("BEFORE", "AFTER"):
+        if kind in ("BEFORE", "AFTER", "RECEIPT"):
             profile = profile_for(request.user, verified=True)
             job_id = serializers.UUIDField().run_validation(request.data.get("job_id"))
             assignment = JobAssignment.objects.filter(id=job_id, technician=profile).first()
             if not assignment or assignment.status not in ("INSPECTING", "AWAITING_QUOTATION_APPROVAL", "IN_PROGRESS"):
                 raise serializers.ValidationError("Select an active assigned job for service photos.")
-            if content_type == "application/pdf":
+            if kind in ("BEFORE", "AFTER") and content_type == "application/pdf":
                 raise serializers.ValidationError("Service photos must be JPEG or PNG.")
         document = TechnicianDocument.objects.create(technician=profile, kind=kind,
             assignment=assignment, file=upload, content_type=content_type)
@@ -355,10 +368,13 @@ class TechnicianJobActionView(APIView):
 
     def post(self, request, job_id, action):
         targets = {"en-route": "EN_ROUTE", "arrived": "ARRIVED", "start-inspection": "INSPECTING",
-                   "start-work": "IN_PROGRESS"}
+                   "start-work": "IN_PROGRESS", "start": "IN_PROGRESS"}
         if action not in targets:
             raise Http404()
-        job = transition(request.user, job_id, targets[action])
+        target = targets[action]
+        if target == "IN_PROGRESS":
+            verify_start_otp(request.user, job_id, request.data.get("otp") or request.data.get("start_otp"))
+        job = transition(request.user, job_id, target)
         return Response({"id": str(job.id), "status": job.status})
 
 
@@ -575,3 +591,140 @@ class AdminCreateOfferView(APIView):
         offer = create_offer(request.user, data.validated_data["booking_id"],
                              data.validated_data["technician_id"], data.validated_data["expires_at"])
         return Response(offer_data(offer), status=201)
+
+
+class TechnicianPerformanceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = profile_for(request.user)
+        assignments = JobAssignment.objects.filter(technician=profile)
+        reviews = Review.objects.filter(technician=profile, is_visible=True).aggregate(avg=Avg("rating"), count=Count("id"))
+        return Response({
+            "completed_jobs": assignments.filter(status="SERVICE_COMPLETED").count(),
+            "active_jobs": assignments.exclude(status__in=["SERVICE_COMPLETED", "CANCELLED"]).count(),
+            "cancelled_jobs": assignments.filter(status="CANCELLED").count(),
+            "average_rating": round(reviews["avg"], 2) if reviews["avg"] else None,
+            "review_count": reviews["count"],
+        })
+
+
+class TechnicianReviewsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile = profile_for(request.user)
+        reviews = Review.objects.filter(technician=profile, is_visible=True).select_related("service", "customer").order_by("-created_at")
+        return Response({"results": [
+            {"id": str(r.id), "rating": r.rating, "comment": r.comment,
+             "service": r.service.name, "customer_name": r.customer.get_full_name() or "Customer",
+             "created_at": r.created_at}
+            for r in reviews[:50]
+        ]})
+
+
+class AdminTechnicianCompanyUsersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _serialize(self, m):
+        return {
+            "id": str(m.id),
+            "user_id": m.user_id,
+            "name": m.user.get_full_name() or m.user.phone_e164,
+            "phone_e164": m.user.phone_e164,
+            "phone_number": m.user.phone_e164,
+            "role": m.role,
+            "is_active": m.is_active,
+            "created_at": m.created_at,
+        }
+
+    def get(self, request, technician_id):
+        require_admin(request.user, "TECH_REVIEWER", "TECH_ADMIN")
+        profile = get_object_or_404(TechnicianProfile, id=technician_id)
+        rows = TechnicianCompanyMember.objects.filter(technician=profile).select_related("user").order_by("created_at")
+        return Response({"results": [self._serialize(m) for m in rows]})
+
+    def post(self, request, technician_id):
+        require_admin(request.user, "TECH_ADMIN")
+        profile = get_object_or_404(TechnicianProfile, id=technician_id)
+        User = get_user_model()
+        phone = (request.data.get("phone_e164") or request.data.get("phone_number") or "").strip()
+        if phone and phone.isdigit() and len(phone) == 10:
+            phone = f"+91{phone}"
+        user_id = request.data.get("user_id")
+        if user_id:
+            user = get_object_or_404(User, id=user_id, is_active=True)
+        elif phone:
+            user, _ = User.objects.get_or_create(phone_e164=phone, defaults={"username": phone, "is_active": True})
+        else:
+            raise serializers.ValidationError("Provide user_id or mobile number.")
+        raw_role = str(request.data.get("role", "TECHNICIAN")).upper()
+        if raw_role == "STAFF":
+            raw_role = "TECHNICIAN"
+        role = serializers.ChoiceField(choices=["OWNER", "MANAGER", "TECHNICIAN"]).run_validation(raw_role)
+        member, _ = TechnicianCompanyMember.objects.update_or_create(
+            technician=profile, user=user,
+            defaults={"role": role, "is_active": True, "added_by": request.user},
+        )
+        AuditLog.objects.create(actor=request.user, action="TECHNICIAN_COMPANY_MEMBER_ADDED",
+                                resource_type="TechnicianCompanyMember", resource_id=str(member.id))
+        return Response(self._serialize(member), status=201)
+
+
+class AdminTechnicianCompanyUserDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, technician_id, member_id):
+        require_admin(request.user, "TECH_ADMIN")
+        member = get_object_or_404(TechnicianCompanyMember.objects.select_related("user"), id=member_id, technician_id=technician_id)
+        if "role" in request.data:
+            raw_role = str(request.data["role"]).upper()
+            if raw_role == "STAFF":
+                raw_role = "TECHNICIAN"
+            member.role = serializers.ChoiceField(choices=["OWNER", "MANAGER", "TECHNICIAN"]).run_validation(raw_role)
+        if "is_active" in request.data:
+            member.is_active = bool(request.data["is_active"])
+        member.save()
+        return Response(AdminTechnicianCompanyUsersView()._serialize(member))
+
+    def delete(self, request, technician_id, member_id):
+        require_admin(request.user, "TECH_ADMIN")
+        member = get_object_or_404(TechnicianCompanyMember, id=member_id, technician_id=technician_id)
+        member.is_active = False
+        member.save(update_fields=["is_active", "updated_at"])
+        return Response(status=204)
+
+
+class AdminTechnicianLeavesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        require_admin(request.user, "TECH_REVIEWER", "TECH_ADMIN")
+        qs = TechnicianTimeOff.objects.select_related("technician__user").order_by("-created_at")
+        if request.query_params.get("status"):
+            qs = qs.filter(status=request.query_params["status"])
+        return Response({"results": [
+            {"id": str(l.id), "technician_id": str(l.technician_id),
+             "technician_name": l.technician.display_name, "technician_phone": l.technician.user.phone_e164,
+             "start_at": l.start_at, "end_at": l.end_at, "reason": l.reason,
+             "status": l.status, "review_note": l.review_note}
+            for l in qs[:100]
+        ]})
+
+
+class AdminTechnicianLeaveReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, leave_id):
+        require_admin(request.user, "TECH_ADMIN")
+        leave = get_object_or_404(TechnicianTimeOff.objects.select_for_update(), id=leave_id)
+        status_choice = serializers.ChoiceField(choices=["APPROVED", "REJECTED"]).run_validation(request.data.get("status"))
+        note = serializers.CharField(max_length=240, allow_blank=True, required=False).run_validation(request.data.get("note", ""))
+        leave.status = status_choice
+        leave.reviewed_by = request.user
+        leave.review_note = note
+        leave.save(update_fields=["status", "reviewed_by", "review_note", "updated_at"])
+        AuditLog.objects.create(actor=request.user, action=f"TECHNICIAN_LEAVE_{status_choice}",
+                                resource_type="TechnicianTimeOff", resource_id=str(leave.id))
+        return Response({"id": str(leave.id), "status": leave.status, "review_note": leave.review_note})

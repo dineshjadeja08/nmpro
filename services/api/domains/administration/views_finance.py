@@ -84,13 +84,15 @@ class AdminFinancePaymentsView(APIView):
 
     def get(self, request):
         require(request.user, "VIEW_FINANCE")
-        qs = Payment.objects.select_related("booking", "payment_order").order_by("-created_at")
+        qs = Payment.objects.select_related("booking", "booking__user", "booking__invoice", "payment_order").order_by("-created_at")
         if request.query_params.get("q"):
             q = request.query_params["q"][:100]
-            qs = qs.filter(models.Q(booking__reference__icontains=q) | models.Q(provider_payment_id__icontains=q))
+            qs = qs.filter(models.Q(booking__reference__icontains=q) | models.Q(provider_payment_id__icontains=q) | models.Q(booking__user__customer_code__icontains=q))
         if request.query_params.get("status"):
             qs = qs.filter(status=request.query_params["status"])
         return paged(request, qs, lambda p: {"id": str(p.id), "booking_reference": p.booking.reference,
+            "customer_code": getattr(p.booking.user, "customer_code", ""),
+            "invoice_number": p.booking.invoice.invoice_number if hasattr(p.booking, "invoice") and p.booking.invoice else "",
             "provider_payment_id": p.provider_payment_id, "status": p.status,
             "amount_paise": p.amount_paise, "currency": p.currency, "verified_at": p.verified_at})
 
@@ -100,8 +102,9 @@ class AdminPaymentOrdersView(APIView):
 
     def get(self, request):
         require(request.user, "VIEW_FINANCE")
-        return paged(request, PaymentIntent.objects.select_related("booking").order_by("-created_at"),
+        return paged(request, PaymentIntent.objects.select_related("booking", "booking__user").order_by("-created_at"),
             lambda o: {"id": str(o.id), "booking_reference": o.booking.reference,
+                "customer_code": getattr(o.booking.user, "customer_code", ""),
                 "provider_order_id": o.provider_order_id, "status": o.status,
                 "amount_paise": o.amount_paise})
 
@@ -111,10 +114,11 @@ class AdminFinanceRefundsView(APIView):
 
     def get(self, request):
         require(request.user, "VIEW_FINANCE")
-        qs = Refund.objects.select_related("booking", "payment").order_by("-created_at")
+        qs = Refund.objects.select_related("booking", "booking__user", "payment").order_by("-created_at")
         if request.query_params.get("status"):
             qs = qs.filter(status=request.query_params["status"])
         return paged(request, qs, lambda r: {"id": str(r.id), "booking_reference": r.booking.reference,
+            "customer_code": getattr(r.booking.user, "customer_code", ""),
             "payment_id": str(r.payment_id), "amount_paise": r.amount_paise,
             "status": r.status, "reason_code": r.reason_code,
             "provider_refund_id": r.provider_refund_id})
@@ -142,9 +146,10 @@ class AdminInvoiceView(APIView):
 
     def get(self, request, invoice_id):
         require(request.user, "VIEW_FINANCE")
-        invoice = get_object_or_404(Invoice.objects.select_related("booking"), id=invoice_id)
+        invoice = get_object_or_404(Invoice.objects.select_related("booking", "booking__user"), id=invoice_id)
         return Response({"id": str(invoice.id), "invoice_number": invoice.invoice_number,
             "booking_id": str(invoice.booking_id), "booking_reference": invoice.booking.reference,
+            "customer_code": getattr(invoice.booking.user, "customer_code", ""),
             "issue_date": invoice.issue_date, "status": invoice.status,
             "subtotal_paise": invoice.subtotal_paise, "tax_paise": invoice.tax_paise,
             "total_paise": invoice.total_paise, "download_available": bool(invoice.document)})

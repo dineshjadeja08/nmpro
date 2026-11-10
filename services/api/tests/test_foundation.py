@@ -63,4 +63,4 @@ def test_production_configuration_fails_without_required_secrets():
         check=False,
     )
     assert result.returncode != 0
-    assert "Production needs a private secret" in result.stderr
+    assert "need a private secret" in result.stderr

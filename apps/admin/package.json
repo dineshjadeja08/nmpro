@@ -1,1 +1,21 @@
-{"name":"@nammapros/admin","version":"0.1.0","private":true,"scripts":{"dev":"next dev -p 3002","build":"next build"},"dependencies":{"next":"16.4.3","react":"19.2.8","react-dom":"19.2.8"}}
+{
+  "name": "@nammapros/admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tailwindcss -i src/app/style.css -o src/app/globals.css && next dev -p 3002",
+    "build": "tailwindcss -i src/app/style.css -o src/app/globals.css && next build",
+    "build:css": "tailwindcss -i src/app/style.css -o src/app/globals.css"
+  },
+  "dependencies": {
+    "@tailwindcss/cli": "^4.3.4",
+    "@tailwindcss/postcss": "^4.3.4",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.70.0",
+    "next": "16.4.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.4"
+  }
+}

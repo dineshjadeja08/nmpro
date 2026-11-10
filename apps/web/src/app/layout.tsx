@@ -3,6 +3,7 @@ import { Nunito, Poppins } from "next/font/google";
 import type { ReactNode } from "react";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
+import { LocationProvider } from "@/components/location-provider";
 import "./globals.css";
 
 const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-heading", display: "swap" });
@@ -17,5 +18,5 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
-  return <html lang="en" className={`${poppins.variable} ${nunito.variable}`}><body><Header/>{children}<Footer/></body></html>;
+  return <html lang="en" className={`${poppins.variable} ${nunito.variable}`}><body><LocationProvider><Header/>{children}<Footer/></LocationProvider></body></html>;
 }

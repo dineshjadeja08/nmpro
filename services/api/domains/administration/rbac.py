@@ -1,7 +1,7 @@
 from rest_framework.exceptions import PermissionDenied
 from django.utils import timezone
 
-from .models import RolePermission, StaffRole
+from .models import RolePermission, StaffGroup, StaffRole
 
 
 CAPABILITIES = {
@@ -27,6 +27,8 @@ def roles_for(user):
 
 
 def can(user, permission):
+    if not user.is_authenticated or not user.is_active:
+        return False
     roles = roles_for(user)
     if "SUPER_ADMIN" in roles:
         return True
@@ -34,15 +36,32 @@ def can(user, permission):
         return False
     if roles & CAPABILITIES[permission]:
         return True
-    return RolePermission.objects.filter(role__in=roles, permission_code=permission).exists()
+    if RolePermission.objects.filter(role__in=roles, permission_code=permission).exists():
+        return True
+    return any(
+        permission in (group.permissions or [])
+        for group in StaffGroup.objects.filter(members=user, is_active=True)
+    )
 
 
 def require(user, permission):
     if not can(user, permission):
+        from .models import AdminAuditLog
+        AdminAuditLog.objects.create(
+            actor=user if getattr(user, "is_authenticated", False) else None,
+            action="PERMISSION_DENIED",
+            resource_type="Permission",
+            resource_id=permission,
+            summary={"permission": permission},
+        )
         raise PermissionDenied("Admin permission is required.")
 
 
 def require_recent_auth(request, seconds=600):
+    if getattr(request, "auth", None) and isinstance(request.auth, dict):
+        iat = request.auth.get("iat", 0)
+        if isinstance(iat, (int, float)) and timezone.now().timestamp() - iat <= seconds:
+            return
     verified_at = request.session.get("privileged_verified_at", 0)
     if not isinstance(verified_at, (int, float)) or timezone.now().timestamp() - verified_at > seconds:
         raise PermissionDenied("Sign in again before this financial action.")

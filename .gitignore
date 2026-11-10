@@ -15,5 +15,6 @@ db.sqlite3
 *.log
 tmp/
 var/
+reference_ps_coreF1/
 !.gitkeep
 *.tsbuildinfo

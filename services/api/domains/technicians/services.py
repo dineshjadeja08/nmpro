@@ -49,6 +49,10 @@ def require_admin(user, *roles):
 def profile_for(user, verified=False):
     profile = TechnicianProfile.objects.filter(user=user).first()
     if not profile:
+        from .models import TechnicianCompanyMember
+        membership = TechnicianCompanyMember.objects.select_related("technician").filter(user=user, is_active=True).first()
+        profile = membership.technician if membership else None
+    if not profile:
         raise PermissionDenied("Register as a technician first.")
     if verified and (profile.verification_status != "VERIFIED" or not profile.is_active):
         raise PermissionDenied("Only verified active technicians can use jobs.")
@@ -140,7 +144,7 @@ def _available(profile, booking):
         start_minute__lte=start_minute, end_minute__gte=end_minute).exists():
         return False
     if TechnicianTimeOff.objects.filter(technician=profile, start_at__lt=slot.end_at,
-                                        end_at__gt=slot.start_at).exists():
+                                        end_at__gt=slot.start_at).exclude(status="REJECTED").exists():
         return False
     if JobAssignment.objects.filter(technician=profile, booking__slot__start_at__lt=slot.end_at,
                                     booking__slot__end_at__gt=slot.start_at).exclude(
@@ -151,7 +155,7 @@ def _available(profile, booking):
 
 def eligible(profile, booking):
     return (profile.verification_status == "VERIFIED" and profile.is_active and profile.is_online
-        and booking.status in ("CONFIRMED", "CONFIRMED_UNPAID")
+        and booking.status in ("CONFIRMED", "CONFIRMED_UNPAID", "TECHNICIAN_ASSIGNED", "TECHNICIAN_EN_ROUTE")
         and TechnicianSkill.objects.filter(technician=profile, code=booking.package.skill_code,
                                            is_verified=True).exists()
         and TechnicianServiceZone.objects.filter(technician=profile, zone=booking.slot.zone).exists()
@@ -205,6 +209,14 @@ def accept_offer(user, offer_id):
     JobOffer.objects.filter(booking=booking, status="OFFERED").exclude(id=offer.id).update(status="WITHDRAWN")
     DispatchAttempt.objects.filter(booking=booking, status="OFFERED").exclude(offer=offer).update(status="WITHDRAWN")
     JobStatusEvent.objects.create(assignment=assignment, from_status="OFFERED", to_status="ASSIGNED", actor=user)
+    if booking.status in ("CONFIRMED", "CONFIRMED_UNPAID"):
+        from domains.bookings.models import BookingStatusEvent
+        old_booking_status = booking.status
+        booking.status = "TECHNICIAN_ASSIGNED"
+        booking.save(update_fields=["status", "updated_at"])
+        BookingStatusEvent.objects.create(booking=booking, from_status=old_booking_status,
+                                          to_status="TECHNICIAN_ASSIGNED", actor=user,
+                                          reason="Partner accepted job")
     notify(booking.user, "TECHNICIAN_ASSIGNED", booking)
     audit(user, "JOB_ACCEPTED", "JobAssignment", assignment.id)
     return assignment
@@ -232,28 +244,62 @@ TRANSITIONS = {
 }
 
 
+def verify_start_otp(user, assignment_id, otp_code):
+    profile = profile_for(user, verified=True)
+    assignment = JobAssignment.objects.select_related("booking").filter(id=assignment_id, technician=profile).first()
+    if not assignment:
+        raise JobConflict()
+    booking = assignment.booking
+    if not booking.start_otp_code:
+        return
+    if booking.start_otp_attempts >= 5:
+        raise ValidationError({"otp": "Too many failed OTP attempts."})
+    if str(otp_code or "").strip() != booking.start_otp_code:
+        booking.start_otp_attempts += 1
+        booking.save(update_fields=["start_otp_attempts", "updated_at"])
+        raise ValidationError({"otp": "Incorrect start OTP."})
+
+
 @transaction.atomic
 def transition(user, assignment_id, target):
     profile = profile_for(user, verified=True)
     assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id, technician=profile).first()
     if not assignment or TRANSITIONS.get(assignment.status) != target:
         raise JobConflict()
-    if assignment.booking.status not in ("CONFIRMED", "CONFIRMED_UNPAID"):
+    if assignment.booking.status not in ("CONFIRMED", "CONFIRMED_UNPAID", "TECHNICIAN_ASSIGNED", "TECHNICIAN_EN_ROUTE", "TECHNICIAN_ARRIVED"):
         raise JobConflict("Booking is no longer active.")
     if target == "IN_PROGRESS" and not assignment.quotations.filter(status="APPROVED").exists():
-        raise JobConflict("Customer approval is required before work starts.")
+        # Allow start if package is FIXED_PRICE or quotation approved
+        if assignment.booking.package and assignment.booking.package.pricing_model != "FIXED_PRICE":
+            raise JobConflict("Customer approval is required before work starts.")
     old = assignment.status
     assignment.status = target
     assignment.save(update_fields=["status", "updated_at"])
     JobStatusEvent.objects.create(assignment=assignment, from_status=old, to_status=target, actor=user)
+    booking_status_map = {
+        "EN_ROUTE": "TECHNICIAN_EN_ROUTE",
+        "ARRIVED": "TECHNICIAN_ARRIVED",
+        "IN_PROGRESS": "IN_PROGRESS",
+    }
+    target_booking_status = booking_status_map.get(target)
+    if target_booking_status and assignment.booking.status != target_booking_status:
+        from domains.bookings.models import BookingStatusEvent
+        old_b_status = assignment.booking.status
+        assignment.booking.status = target_booking_status
+        assignment.booking.save(update_fields=["status", "updated_at"])
+        BookingStatusEvent.objects.create(booking=assignment.booking, from_status=old_b_status,
+                                          to_status=target_booking_status, actor=user,
+                                          reason=f"Partner status: {target}")
+        if target_booking_status in ("TECHNICIAN_EN_ROUTE", "TECHNICIAN_ARRIVED", "IN_PROGRESS"):
+            notify(assignment.booking.user, target_booking_status, assignment.booking)
     audit(user, f"JOB_{target}", "JobAssignment", assignment.id)
     return assignment
 
 
 @transaction.atomic
 def submit_inspection(user, assignment_id, data):
-    assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id,
-        technician__user=user, technician__verification_status="VERIFIED", technician__is_active=True).first()
+    profile = profile_for(user, verified=True)
+    assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id, technician=profile).first()
     if not assignment or assignment.status != "INSPECTING" or hasattr(assignment, "inspection"):
         raise JobConflict("Inspection cannot be submitted now.")
     inspection = JobInspection.objects.create(assignment=assignment, submitted_at=timezone.now(), **data)
@@ -263,8 +309,8 @@ def submit_inspection(user, assignment_id, data):
 
 @transaction.atomic
 def submit_quotation(user, assignment_id, labour_paise, items, valid_until):
-    assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id,
-        technician__user=user, technician__verification_status="VERIFIED", technician__is_active=True).first()
+    profile = profile_for(user, verified=True)
+    assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id, technician=profile).first()
     if not assignment or assignment.status != "INSPECTING" or not hasattr(assignment, "inspection"):
         raise JobConflict("Complete inspection before quoting.")
     if assignment.quotations.filter(status__in=["SUBMITTED", "APPROVED"]).exists():
@@ -322,8 +368,10 @@ def decide_quotation(user, booking_id, quote_id, approved):
 
 @transaction.atomic
 def complete_job(user, assignment_id, checklist, parts_used, work_notes):
-    assignment = JobAssignment.objects.select_for_update().select_related("booking").filter(id=assignment_id,
-        technician__user=user, technician__verification_status="VERIFIED", technician__is_active=True).first()
+    profile = profile_for(user, verified=True)
+    assignment = JobAssignment.objects.select_for_update().select_related("booking").filter(
+        id=assignment_id, technician=profile
+    ).first()
     if not assignment or assignment.status != "IN_PROGRESS" or hasattr(assignment, "completion"):
         raise JobConflict("Job cannot be completed in its current state.")
     if not checklist or not all(isinstance(value, str) and value.strip() for value in checklist):
@@ -335,6 +383,14 @@ def complete_job(user, assignment_id, checklist, parts_used, work_notes):
     assignment.save(update_fields=["status", "completed_at", "updated_at"])
     JobStatusEvent.objects.create(assignment=assignment, from_status="IN_PROGRESS",
         to_status="SERVICE_COMPLETED", actor=user)
+    if assignment.booking.status != "COMPLETED":
+        from domains.bookings.models import BookingStatusEvent
+        old_b_status = assignment.booking.status
+        assignment.booking.status = "COMPLETED"
+        assignment.booking.save(update_fields=["status", "updated_at"])
+        BookingStatusEvent.objects.create(booking=assignment.booking, from_status=old_b_status,
+                                          to_status="COMPLETED", actor=user,
+                                          reason="Service completed by partner")
     accrue_earning(assignment)
     notify(assignment.booking.user, "JOB_COMPLETED", assignment.booking)
     audit(user, "JOB_COMPLETED", "JobAssignment", assignment.id)

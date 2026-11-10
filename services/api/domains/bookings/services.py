@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import APIException, ValidationError
 
+from common.sequences import next_booking_reference
 from domains.audit.models import AuditLog
 from domains.catalog.models import PricingRule, ServicePackage
 from domains.locations.models import Address, Zone
@@ -22,6 +23,7 @@ from .models import (
     BookingPriceSnapshot,
     BookingStatusEvent,
     CheckoutQuote,
+    ScheduleClosure,
     SlotHold,
 )
 from .states import require_transition
@@ -62,6 +64,12 @@ def pilot_remaining(slot, now, exclude_hold_id=None, exclude_booking_id=None):
     return settings.PILOT_DAILY_BOOKING_LIMIT - bookings.count() - holds.count()
 
 
+def _has_active_closure(slot: AppointmentSlot) -> bool:
+    return ScheduleClosure.objects.filter(
+        is_active=True, start_at__lt=slot.end_at, end_at__gt=slot.start_at
+    ).filter(Q(zone=slot.zone) | Q(zone__isnull=True)).exists()
+
+
 def serviceable(package: ServicePackage, address: Address) -> Zone | None:
     if not package.is_active or not package.service.is_active or not package.service.category.is_active:
         return None
@@ -70,9 +78,10 @@ def serviceable(package: ServicePackage, address: Address) -> Zone | None:
     zones = Zone.objects.filter(
         city__is_active=True, is_active=True, city__name__iexact=address.city,
         postal_code=address.postal_code,
-        servicecoverage__service=package.service, servicecoverage__is_active=True,
         pricingrule__package=package, pricingrule__is_active=True,
-    )
+    ).filter(
+        Q(services_configured=False) | Q(servicecoverage__service=package.service, servicecoverage__is_active=True)
+    ).distinct()
     if settings.PILOT_ENABLED:
         zones = zones.filter(id__in=settings.PILOT_ZONE_IDS)
     return zones.first()
@@ -87,9 +96,14 @@ def available_slots(package: ServicePackage, address: Address, start, end):
         package=package, zone=zone, is_active=True, is_blackout=False,
         start_at__gte=max(now, start), start_at__lte=end,
     ).order_by("start_at")[:100]
+    closures = list(ScheduleClosure.objects.filter(
+        is_active=True, end_at__gt=max(now, start), start_at__lt=end
+    ).filter(Q(zone=zone) | Q(zone__isnull=True)))
     result = []
     pilot_remaining_by_day = {}
     for slot in slots:
+        if any(c.start_at < slot.end_at and c.end_at > slot.start_at for c in closures):
+            continue
         if slot.start_at < now + timedelta(minutes=slot.minimum_lead_minutes):
             continue
         active_holds = SlotHold.objects.filter(slot=slot, status="ACTIVE", expires_at__gt=now).count()
@@ -122,7 +136,7 @@ def _live_hold(hold: SlotHold, user):
 def create_hold(user, package: ServicePackage, address: Address, slot_id):
     # PostgreSQL row lock serializes competing holds for the same slot.
     slot = AppointmentSlot.objects.select_for_update().filter(id=slot_id).first()
-    if not slot or not slot.is_active or slot.is_blackout or slot.package_id != package.id:
+    if not slot or not slot.is_active or slot.is_blackout or slot.package_id != package.id or _has_active_closure(slot):
         raise Conflict("This appointment is not available.")
     zone = serviceable(package, address)
     now = timezone.now()
@@ -188,29 +202,55 @@ def create_quote(user, hold_id):
     if not rule:
         raise Conflict("Pricing is no longer available.")
     lines, total = calculate_price(rule)
+    advance_paise = total
+    if rule.payment_policy == "ADVANCE":
+        if rule.advance_type == "PERCENTAGE":
+            advance_paise = (total * rule.advance_percentage) // 100
+        elif rule.advance_type == "FIXED":
+            advance_paise = min(rule.advance_amount_paise, total)
+    elif rule.payment_policy == "PAY_AT_VISIT":
+        advance_paise = 0
+    remaining_balance_paise = total - advance_paise
     return CheckoutQuote.objects.create(hold=hold, user=user, pricing_rule=rule,
                                         pricing_version=rule.version, lines=lines, total_paise=total,
+                                        advance_paise=advance_paise,
+                                        remaining_balance_paise=remaining_balance_paise,
                                         expires_at=min(hold.expires_at, timezone.now() + timedelta(minutes=5)))
 
 
 def serialize_quote(quote):
     return {"id": str(quote.id), "hold_id": str(quote.hold_id), "expires_at": quote.expires_at,
-            "lines": quote.lines, "total_paise": quote.total_paise, "currency": "INR",
+            "lines": quote.lines, "total_paise": quote.total_paise,
+            "advance_paise": getattr(quote, "advance_paise", 0),
+            "remaining_balance_paise": getattr(quote, "remaining_balance_paise", 0),
+            "currency": "INR",
             "pricing_policy_id": str(quote.pricing_rule_id), "pricing_version": quote.pricing_version,
-            "payment_policy": quote.pricing_rule.payment_policy}
+            "payment_policy": quote.pricing_rule.payment_policy,
+            "advance_type": quote.pricing_rule.advance_type,
+            "advance_percentage": quote.pricing_rule.advance_percentage}
 
 
 def serialize_booking(booking):
     snapshot = booking.price_snapshot
     invoice = getattr(booking, "invoice", None)
     payment_order = getattr(booking, "payment_order", None)
+    assignment = getattr(booking, "technician_assignment", None)
+    review = getattr(booking, "review", None)
     now = timezone.now()
-    can_cancel = bool(snapshot.cancellation_cutoff_minutes is not None and booking.status == "CONFIRMED_UNPAID"
+    can_cancel = bool(snapshot.cancellation_cutoff_minutes is not None and booking.status in ("REQUESTED", "CONFIRMED_UNPAID")
                       and booking.payment_status == "UNPAID" and
                       booking.slot.start_at > now + timedelta(minutes=snapshot.cancellation_cutoff_minutes))
-    can_reschedule = bool(snapshot.reschedule_cutoff_minutes is not None and booking.status == "CONFIRMED_UNPAID"
+    can_reschedule = bool(snapshot.reschedule_cutoff_minutes is not None and booking.status in ("REQUESTED", "CONFIRMED_UNPAID")
                           and booking.payment_status == "UNPAID" and
                           booking.slot.start_at > now + timedelta(minutes=snapshot.reschedule_cutoff_minutes))
+    work_started = (
+        booking.status in ("IN_PROGRESS", "COMPLETED", "CLOSED", "CANCELLED", "EXPIRED")
+        or bool(assignment and assignment.status in ("IN_PROGRESS", "SERVICE_COMPLETED"))
+    )
+    can_review = bool(
+        (booking.status in ("COMPLETED", "CLOSED") or (assignment and assignment.status == "SERVICE_COMPLETED"))
+        and review is None
+    )
     return {"id": str(booking.id), "reference": booking.reference, "status": booking.status,
             "payment_status": booking.payment_status, "payment_expires_at": booking.payment_expires_at,
             "invoice_available": bool(invoice and invoice.status == "ISSUED" and invoice.document),
@@ -218,6 +258,20 @@ def serialize_booking(booking):
                                                and booking.status == "AWAITING_PAYMENT"
                                                and booking.payment_status != "FAILED"),
             "version": booking.version,
+            "problem_description": booking.problem_description,
+            "offline_collected_paise": booking.offline_collected_paise,
+            "start_otp_code": booking.start_otp_code if not work_started else "",
+            "technician": (
+                {
+                    "name": assignment.technician.display_name,
+                    "phone": assignment.technician.user.phone_e164,
+                    "status": assignment.status,
+                }
+                if assignment and booking.status not in ("CANCELLED", "EXPIRED")
+                else None
+            ),
+            "can_review": can_review,
+            "review": {"rating": review.rating, "comment": review.comment} if review else None,
             "service": booking.service.name, "package": booking.package.name,
             "package_id": str(booking.package_id), "address_id": str(booking.address_id),
             "can_cancel": can_cancel, "can_reschedule": can_reschedule,
@@ -225,13 +279,16 @@ def serialize_booking(booking):
                         "locality": booking.address.locality, "city": booking.address.city,
                         "postal_code": booking.address.postal_code},
             "slot": {"start_at": booking.slot.start_at, "end_at": booking.slot.end_at},
-            "price": {"lines": snapshot.lines, "total_paise": snapshot.total_paise, "currency": snapshot.currency},
+            "price": {"lines": snapshot.lines, "total_paise": snapshot.total_paise,
+                      "advance_paise": getattr(snapshot, "advance_paise", 0),
+                      "remaining_balance_paise": getattr(snapshot, "remaining_balance_paise", 0),
+                      "currency": snapshot.currency},
             "events": [{"from_status": e.from_status, "to_status": e.to_status, "created_at": e.created_at}
                        for e in booking.events.all()]}
 
 
 @transaction.atomic
-def confirm_booking(user, hold_id, quote_id, key, accepted_total):
+def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_description=""):
     if not key or len(key) > 128:
         raise ValidationError("A valid Idempotency-Key header is required.")
     body_hash = hashlib.sha256(json.dumps({"hold_id": str(hold_id), "quote_id": str(quote_id),
@@ -268,9 +325,9 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total):
     _, current_total = calculate_price(rule)
     if current_total != quote.total_paise or accepted_total != quote.total_paise:
         raise Conflict("The price changed. Request and accept a new quote.")
-    if rule.payment_policy == "PREPAID" and not settings.RAZORPAY_ENABLED:
+    if rule.payment_policy in ("PREPAID", "ADVANCE") and not settings.RAZORPAY_ENABLED:
         raise Conflict("Online payment is not yet available for this service.")
-    if rule.payment_policy not in ("PREPAID", "PAY_AT_VISIT"):
+    if rule.payment_policy not in ("PREPAID", "PAY_AT_VISIT", "ADVANCE"):
         raise Conflict("Payment policy is not supported.")
     occupied = occupied_bookings(slot, timezone.now())
     active_other = SlotHold.objects.filter(slot=slot, status="ACTIVE", expires_at__gt=timezone.now()).exclude(id=hold.id).count()
@@ -278,34 +335,56 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total):
         raise Conflict("This appointment was just taken. Choose another time.")
     if settings.PILOT_ENABLED and pilot_remaining(slot, now, exclude_hold_id=hold.id) <= 0:
         raise Conflict("The pilot has reached its daily booking limit.")
-    reference = f"NP-{timezone.now():%y%m%d}-{secrets.token_hex(4).upper()}"
-    prepaid = rule.payment_policy == "PREPAID"
+    reference = next_booking_reference(now)
+    requires_online_payment = rule.payment_policy in ("PREPAID", "ADVANCE")
     payment_expires_at = (min(now + timedelta(minutes=settings.PAYMENT_CHECKOUT_MINUTES),
-                              slot.start_at - timedelta(minutes=slot.minimum_lead_minutes)) if prepaid else None)
-    target_status = "AWAITING_PAYMENT" if prepaid else "CONFIRMED_UNPAID"
+                              slot.start_at - timedelta(minutes=slot.minimum_lead_minutes)) if requires_online_payment else None)
+    target_status = "AWAITING_PAYMENT" if requires_online_payment else "CONFIRMED_UNPAID"
     require_transition("DRAFT", target_status)
     booking = Booking.objects.create(user=user, service=slot.package.service, package=slot.package,
                                      address=hold.address, slot=slot, hold=hold, reference=reference,
                                      status=target_status,
-                                     payment_status="PENDING" if prepaid else "UNPAID",
+                                     payment_status="PENDING" if requires_online_payment else "UNPAID",
                                      payment_expires_at=payment_expires_at,
-                                     confirmed_at=None if prepaid else timezone.now())
+                                     confirmed_at=None if requires_online_payment else timezone.now(),
+                                     problem_description=str(problem_description or "")[:2000],
+                                     start_otp_code=f"{secrets.randbelow(10000):04d}")
     BookingItem.objects.create(booking=booking, package=slot.package)
     BookingPriceSnapshot.objects.create(booking=booking, pricing_rule_id=rule.id,
                                          pricing_version=rule.version, lines=quote.lines,
-                                         total_paise=quote.total_paise, payment_policy=rule.payment_policy,
+                                         total_paise=quote.total_paise,
+                                         advance_type=rule.advance_type,
+                                         advance_percentage=rule.advance_percentage,
+                                         advance_paise=quote.advance_paise,
+                                         remaining_balance_paise=quote.remaining_balance_paise,
+                                         payment_policy=rule.payment_policy,
                                          cancellation_cutoff_minutes=rule.cancellation_cutoff_minutes,
                                          reschedule_cutoff_minutes=rule.reschedule_cutoff_minutes)
     BookingStatusEvent.objects.create(booking=booking, from_status="DRAFT", to_status=booking.status, actor=user)
     BookingIdempotencyRecord.objects.create(user=user, key=key, request_hash=body_hash, booking=booking)
-    OutboxEvent.objects.create(event_type="BOOKING_PAYMENT_PENDING" if prepaid else "BOOKING_CONFIRMED", aggregate_id=booking.id,
+    OutboxEvent.objects.create(event_type="BOOKING_PAYMENT_PENDING" if requires_online_payment else "BOOKING_CONFIRMED", aggregate_id=booking.id,
                                payload={"booking_id": str(booking.id)})
-    AuditLog.objects.create(actor=user, action="BOOKING_PAYMENT_PENDING" if prepaid else "BOOKING_CONFIRMED", resource_type="Booking",
+    AuditLog.objects.create(actor=user, action="BOOKING_PAYMENT_PENDING" if requires_online_payment else "BOOKING_CONFIRMED", resource_type="Booking",
                             resource_id=str(booking.id), metadata={"reference": reference})
     hold.status = "CONSUMED"
     hold.save(update_fields=["status", "updated_at"])
     quote.status = "ACCEPTED"
     quote.save(update_fields=["status", "updated_at"])
+    if getattr(user, "phone_e164", None):
+        try:
+            from domains.operations.models import Lead, LeadActivity
+            lead = Lead.objects.filter(
+                mobile_number=user.phone_e164, service=slot.package.service,
+                converted_booking__isnull=True,
+            ).exclude(status__in=["CONVERTED", "LOST", "CANCELLED"]).order_by("-created_at").first()
+            if lead:
+                lead.converted_booking = booking
+                lead.status = "CONVERTED"
+                lead.save(update_fields=["converted_booking", "status", "updated_at"])
+                LeadActivity.objects.create(lead=lead, actor=user, kind="LINKED_TO_BOOKING",
+                    detail={"booking_id": str(booking.id), "booking_reference": booking.reference})
+        except Exception:
+            pass
     return booking, True
 
 

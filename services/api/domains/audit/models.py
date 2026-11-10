@@ -10,3 +10,5 @@ class AuditLog(UUIDStampedModel):
     resource_type = models.CharField(max_length=80)
     resource_id = models.CharField(max_length=80)
     metadata = models.JSONField(default=dict)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default="")

@@ -9,7 +9,7 @@ from domains.bookings.models import AppointmentSlot, Booking, BookingStatusEvent
 from domains.bookings.services import Conflict
 from domains.notifications.models import OutboxEvent
 
-from .models import Payment, PaymentEvent, PaymentIntent, ReconciliationException
+from .models import BalancePaymentIntent, Payment, PaymentEvent, PaymentIntent, ReconciliationException
 from .providers.razorpay import PaymentUnavailable, RazorpayProvider
 
 
@@ -30,7 +30,7 @@ def create_payment_order(user, booking_id, key):
     with transaction.atomic():
         booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(
             id=booking_id, user=user).first()
-        if not booking or booking.price_snapshot.payment_policy != "PREPAID":
+        if not booking or booking.price_snapshot.payment_policy not in ("PREPAID", "ADVANCE"):
             raise Conflict("This booking cannot be paid online.")
         if booking.status != "AWAITING_PAYMENT" or booking.payment_expires_at <= timezone.now():
             raise Conflict("The payment window has closed.")
@@ -50,8 +50,11 @@ def create_payment_order(user, booking_id, key):
                     booking.save(update_fields=["payment_status", "version", "updated_at"])
                 return order
             raise Conflict("Payment order creation needs review. Please contact support.")
+        charge_amount = (booking.price_snapshot.advance_paise
+                         if booking.price_snapshot.payment_policy == "ADVANCE"
+                         else booking.price_snapshot.total_paise)
         order = PaymentIntent.objects.create(
-            booking=booking, customer=user, amount_paise=booking.price_snapshot.total_paise,
+            booking=booking, customer=user, amount_paise=charge_amount,
             currency="INR", status="CREATING", idempotency_key=key,
             expires_at=booking.payment_expires_at)
     try:
@@ -121,7 +124,11 @@ def record_captured_payment(order_id, payment_id):
         now = timezone.now()
         if booking.status == "AWAITING_PAYMENT" and booking.payment_expires_at > now:
             booking.status = "CONFIRMED"
-            booking.payment_status = "PAID"
+            rem = getattr(booking.price_snapshot, "remaining_balance_paise", 0)
+            if booking.price_snapshot.payment_policy == "ADVANCE" and rem > 0:
+                booking.payment_status = "ADVANCE_PAID"
+            else:
+                booking.payment_status = "PAID"
             booking.confirmed_at = now
             booking.version += 1
             booking.save(update_fields=["status", "payment_status", "confirmed_at", "version", "updated_at"])
@@ -131,7 +138,7 @@ def record_captured_payment(order_id, payment_id):
                                        payload={"booking_id": str(booking.id)})
             OutboxEvent.objects.create(event_type="PAYMENT_SUCCESS", aggregate_id=booking.id,
                                        payload={"booking_id": str(booking.id)})
-        elif booking.status == "CONFIRMED" and booking.payment_status == "PAID":
+        elif booking.status == "CONFIRMED" and booking.payment_status in ("PAID", "ADVANCE_PAID"):
             ReconciliationException.objects.get_or_create(
                 fingerprint=f"duplicate-capture:{payment_id}", defaults={
                     "booking": booking, "payment": payment, "exception_type": "DUPLICATE_CAPTURE_FOR_ORDER"})
@@ -194,7 +201,10 @@ def process_payment_event(event):
     if event.processing_status == "PROCESSED":
         return
     if event.event_type == "payment.captured" and event.provider_payment_id and event.provider_order_id:
-        record_captured_payment(event.provider_order_id, event.provider_payment_id)
+        if PaymentIntent.objects.filter(provider_order_id=event.provider_order_id).exists():
+            record_captured_payment(event.provider_order_id, event.provider_payment_id)
+        elif BalancePaymentIntent.objects.filter(provider_order_id=event.provider_order_id).exists():
+            record_captured_balance_payment(event.provider_order_id, event.provider_payment_id)
     elif event.event_type == "payment.failed" and event.provider_payment_id and event.provider_order_id:
         record_failed_payment(event.provider_order_id, event.provider_payment_id)
     else:
@@ -204,3 +214,120 @@ def process_payment_event(event):
     event.processing_status = "PROCESSED"
     event.processed_at = timezone.now()
     event.save(update_fields=["processing_status", "processed_at", "updated_at"])
+
+
+def create_balance_payment_order(user, booking_id, key):
+    if not key or len(key) > 128:
+        raise Conflict("A valid Idempotency-Key header is required.")
+    if not settings.RAZORPAY_ENABLED:
+        raise PaymentUnavailable()
+    with transaction.atomic():
+        booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(
+            id=booking_id, user=user).first()
+        if not booking:
+            raise Conflict("Booking not found.")
+        if booking.payment_status != "ADVANCE_PAID":
+            raise Conflict("Remaining balance can only be paid after advance is captured.")
+        balance_amount = getattr(booking.price_snapshot, "remaining_balance_paise", 0)
+        if balance_amount <= 0:
+            raise Conflict("No remaining balance is due for this booking.")
+        existing_key = BalancePaymentIntent.objects.filter(customer=user, idempotency_key=key).first()
+        if existing_key and existing_key.booking_id != booking.id:
+            raise Conflict("This idempotency key belongs to a different balance order.")
+        order = BalancePaymentIntent.objects.select_for_update().filter(booking=booking).first()
+        if order:
+            if order.status == "CREATED" and order.provider_order_id:
+                order.checkout_started_at = timezone.now()
+                order.save(update_fields=["checkout_started_at", "updated_at"])
+                return order
+            if order.status == "PAID":
+                raise Conflict("Balance has already been paid.")
+        order = BalancePaymentIntent.objects.create(
+            booking=booking, customer=user, amount_paise=balance_amount,
+            currency="INR", status="CREATING", idempotency_key=key,
+            expires_at=timezone.now() + timezone.timedelta(hours=24))
+    try:
+        remote = get_provider().create_order(order.amount_paise, f"{booking.reference}-BAL")
+    except Exception as exc:
+        raise PaymentUnavailable() from exc
+    if not _valid_order_data(remote, order.amount_paise):
+        raise PaymentUnavailable("Payment provider returned an invalid balance order.")
+    with transaction.atomic():
+        order = BalancePaymentIntent.objects.select_for_update().get(id=order.id)
+        order.provider_order_id = remote["id"]
+        order.status = "CREATED"
+        order.checkout_started_at = timezone.now()
+        order.save(update_fields=["provider_order_id", "status", "checkout_started_at", "updated_at"])
+    return order
+
+
+def record_captured_balance_payment(order_id, payment_id):
+    if not order_id or not payment_id:
+        raise Conflict("Payment identifiers are required.")
+    try:
+        remote = get_provider().fetch_payment(payment_id)
+    except Exception as exc:
+        raise PaymentUnavailable() from exc
+    if not isinstance(remote, dict) or remote.get("id") != payment_id or remote.get("order_id") != order_id:
+        raise Conflict("Payment provider details do not match the order.")
+    with transaction.atomic():
+        order = BalancePaymentIntent.objects.select_for_update().select_related("booking").filter(
+            provider_order_id=order_id).first()
+        if not order:
+            raise Conflict("Unknown balance payment order.")
+        booking = Booking.objects.select_for_update().get(id=order.booking_id)
+        if (remote.get("amount") != order.amount_paise or remote.get("currency") != order.currency
+                or remote.get("status") != "captured"):
+            raise Conflict("Balance payment has not been captured for the required amount.")
+        existing = Payment.objects.filter(provider_payment_id=payment_id).first()
+        if existing:
+            if existing.status == "CAPTURED":
+                return booking
+            existing.status = "CAPTURED"
+            existing.verified_at = timezone.now()
+            existing.save(update_fields=["status", "verified_at", "updated_at"])
+            payment = existing
+        else:
+            payment = Payment.objects.create(
+                booking=booking, balance_payment_order=order, provider_payment_id=payment_id,
+                amount_paise=order.amount_paise, currency=order.currency,
+                status="CAPTURED", payment_type="BALANCE", payment_method="ONLINE",
+                verified_at=timezone.now())
+        order.status = "PAID"
+        order.save(update_fields=["status", "updated_at"])
+        booking.payment_status = "PAID"
+        booking.version += 1
+        booking.save(update_fields=["payment_status", "version", "updated_at"])
+        AuditLog.objects.create(actor=None, action="BALANCE_PAYMENT_CAPTURED", resource_type="Payment",
+                                resource_id=str(payment.id), metadata={"booking_id": str(booking.id)})
+        OutboxEvent.objects.create(event_type="PAYMENT_SUCCESS", aggregate_id=booking.id,
+                                   payload={"booking_id": str(booking.id), "type": "BALANCE"})
+        return booking
+
+
+def record_collected_balance(actor, booking_id, method="CASH"):
+    with transaction.atomic():
+        booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(id=booking_id).first()
+        if not booking:
+            raise Conflict("Booking not found.")
+        if booking.payment_status != "ADVANCE_PAID":
+            raise Conflict("Remaining balance can only be recorded when advance is already paid.")
+        rem_amount = getattr(booking.price_snapshot, "remaining_balance_paise", 0)
+        if rem_amount <= 0:
+            raise Conflict("No remaining balance is due.")
+        manual_id = f"collected_{booking.id}_{int(timezone.now().timestamp())}"
+        payment = Payment.objects.create(
+            booking=booking, provider_payment_id=manual_id,
+            amount_paise=rem_amount, currency="INR", status="CAPTURED",
+            payment_type="BALANCE", payment_method=method if method in ("CASH", "UPI") else "CASH",
+            verified_at=timezone.now())
+        booking.payment_status = "PAID"
+        booking.version += 1
+        booking.save(update_fields=["payment_status", "version", "updated_at"])
+        AuditLog.objects.create(actor=actor, action="BALANCE_COLLECTED_AT_VISIT", resource_type="Payment",
+                                resource_id=str(payment.id),
+                                metadata={"booking_id": str(booking.id), "method": method})
+        OutboxEvent.objects.create(event_type="PAYMENT_SUCCESS", aggregate_id=booking.id,
+                                   payload={"booking_id": str(booking.id), "type": "BALANCE", "method": method})
+        return booking
+

@@ -39,9 +39,19 @@ class AdminAuditLog(UUIDStampedModel):
     resource_id = models.CharField(max_length=80)
     summary = models.JSONField(default=dict)
     request_id = models.CharField(max_length=80, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         indexes = [models.Index(fields=["-created_at", "action"])]
+
+
+class StaffGroup(UUIDStampedModel):
+    name = models.CharField(max_length=80, unique=True)
+    description = models.CharField(max_length=240, blank=True, default="")
+    permissions = models.JSONField(default=list)
+    members = models.ManyToManyField(settings.AUTH_USER_MODEL, blank=True, related_name="staff_groups")
+    is_active = models.BooleanField(default=True)
 
 
 class CommissionRule(UUIDStampedModel):

@@ -43,8 +43,55 @@ class CheckoutQuote(UUIDStampedModel):
     pricing_version = models.PositiveIntegerField()
     lines = models.JSONField()
     total_paise = models.PositiveBigIntegerField()
+    advance_paise = models.PositiveBigIntegerField(default=0)
+    remaining_balance_paise = models.PositiveBigIntegerField(default=0)
     expires_at = models.DateTimeField()
     status = models.CharField(max_length=12, choices=[("ACTIVE", "Active"), ("ACCEPTED", "Accepted"), ("EXPIRED", "Expired")], default="ACTIVE")
+
+
+class ScheduleClosure(UUIDStampedModel):
+    zone = models.ForeignKey("locations.Zone", on_delete=models.CASCADE, null=True, blank=True, related_name="closures")
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+    reason = models.CharField(max_length=240, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["is_active", "start_at", "end_at"])]
+
+
+class Cart(UUIDStampedModel):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="cart")
+
+
+class CartItem(UUIDStampedModel):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
+    service = models.ForeignKey("catalog.Service", on_delete=models.CASCADE)
+    package = models.ForeignKey("catalog.ServicePackage", on_delete=models.SET_NULL, null=True, blank=True)
+    quantity = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["cart", "service"], name="unique_cart_service_item")]
+
+
+BOOKING_STATUS_CHOICES = [
+    ("DRAFT", "Draft"),
+    ("REQUESTED", "Requested"),
+    ("AWAITING_PAYMENT", "Awaiting payment"),
+    ("PENDING_PAYMENT", "Pending payment"),
+    ("PAYMENT_FAILED", "Payment failed"),
+    ("CONFIRMED", "Confirmed"),
+    ("CONFIRMED_UNPAID", "Confirmed unpaid"),
+    ("TECHNICIAN_ASSIGNED", "Technician assigned"),
+    ("TECHNICIAN_EN_ROUTE", "Technician en route"),
+    ("TECHNICIAN_ARRIVED", "Technician arrived"),
+    ("IN_PROGRESS", "In progress"),
+    ("COMPLETED", "Completed"),
+    ("CLOSED", "Closed"),
+    ("CANCELLED", "Cancelled"),
+    ("EXPIRED", "Expired"),
+]
 
 
 class Booking(UUIDStampedModel):
@@ -54,11 +101,10 @@ class Booking(UUIDStampedModel):
     address = models.ForeignKey("locations.Address", on_delete=models.PROTECT, null=True)
     slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, null=True)
     hold = models.OneToOneField(SlotHold, on_delete=models.PROTECT, null=True)
-    status = models.CharField(max_length=32, choices=[("DRAFT", "Draft"), ("AWAITING_PAYMENT", "Awaiting payment"),
-                                                      ("CONFIRMED", "Confirmed"), ("CONFIRMED_UNPAID", "Confirmed unpaid"),
-                                                      ("CANCELLED", "Cancelled"), ("EXPIRED", "Expired")], default="DRAFT")
+    status = models.CharField(max_length=32, choices=BOOKING_STATUS_CHOICES, default="DRAFT")
     payment_status = models.CharField(max_length=24, choices=[("UNPAID", "Unpaid"), ("PENDING", "Pending"),
-                                                             ("AUTHORIZED", "Authorized"), ("PAID", "Paid"),
+                                                             ("AUTHORIZED", "Authorized"), ("ADVANCE_PAID", "Advance paid"),
+                                                             ("PAID", "Paid"),
                                                              ("FAILED", "Failed"), ("REFUND_PENDING", "Refund pending"),
                                                              ("PARTIALLY_REFUNDED", "Partially refunded"),
                                                              ("REFUNDED", "Refunded")], default="UNPAID")
@@ -66,6 +112,14 @@ class Booking(UUIDStampedModel):
     reference = models.CharField(max_length=32, unique=True)
     version = models.PositiveIntegerField(default=1)
     confirmed_at = models.DateTimeField(null=True, blank=True)
+    start_otp_code = models.CharField(max_length=4, blank=True, default="")
+    start_otp_attempts = models.PositiveSmallIntegerField(default=0)
+    is_manual_work_order = models.BooleanField(default=False)
+    problem_description = models.TextField(max_length=2000, blank=True, default="")
+    offline_collected_paise = models.PositiveBigIntegerField(default=0)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="closed_bookings")
+    closure_note = models.CharField(max_length=240, blank=True, default="")
 
     class Meta:
         indexes = [models.Index(fields=["user", "-created_at"])]
@@ -83,6 +137,10 @@ class BookingPriceSnapshot(UUIDStampedModel):
     pricing_version = models.PositiveIntegerField()
     lines = models.JSONField()
     total_paise = models.PositiveBigIntegerField()
+    advance_type = models.CharField(max_length=20, default="NONE")
+    advance_percentage = models.PositiveSmallIntegerField(default=0)
+    advance_paise = models.PositiveBigIntegerField(default=0)
+    remaining_balance_paise = models.PositiveBigIntegerField(default=0)
     currency = models.CharField(max_length=3, default="INR")
     payment_policy = models.CharField(max_length=24, default="PAY_AT_VISIT")
     cancellation_cutoff_minutes = models.PositiveIntegerField(null=True, blank=True)

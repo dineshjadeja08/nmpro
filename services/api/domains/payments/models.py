@@ -26,14 +26,38 @@ class PaymentIntent(UUIDStampedModel):
         indexes = [models.Index(fields=["last_reconciled_at", "created_at"])]
 
 
+class BalancePaymentIntent(UUIDStampedModel):
+    booking = models.OneToOneField("bookings.Booking", on_delete=models.PROTECT, related_name="balance_payment_order")
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
+    provider = models.CharField(max_length=20, default="RAZORPAY")
+    amount_paise = models.PositiveBigIntegerField()
+    currency = models.CharField(max_length=3, default="INR")
+    status = models.CharField(max_length=20, choices=[("CREATING", "Creating"), ("CREATED", "Created"),
+                                                      ("PAID", "Paid"), ("FAILED", "Failed"),
+                                                      ("EXPIRED", "Expired")], default="CREATING")
+    provider_order_id = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    idempotency_key = models.CharField(max_length=128, default="")
+    expires_at = models.DateTimeField(null=True)
+    checkout_started_at = models.DateTimeField(null=True, blank=True)
+    last_reconciled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["customer", "idempotency_key"],
+                                               name="unique_balance_order_customer_key")]
+        indexes = [models.Index(fields=["last_reconciled_at", "created_at"])]
+
+
 class Payment(UUIDStampedModel):
     booking = models.ForeignKey("bookings.Booking", on_delete=models.PROTECT, related_name="payments")
-    payment_order = models.ForeignKey(PaymentIntent, on_delete=models.PROTECT, related_name="payments")
+    payment_order = models.ForeignKey(PaymentIntent, on_delete=models.PROTECT, related_name="payments", null=True, blank=True)
+    balance_payment_order = models.ForeignKey(BalancePaymentIntent, on_delete=models.PROTECT, related_name="payments", null=True, blank=True)
     provider_payment_id = models.CharField(max_length=100, unique=True)
     amount_paise = models.PositiveBigIntegerField()
     currency = models.CharField(max_length=3, default="INR")
     status = models.CharField(max_length=20, choices=[("AUTHORIZED", "Authorized"), ("CAPTURED", "Captured"),
                                                       ("FAILED", "Failed")])
+    payment_type = models.CharField(max_length=20, choices=[("INITIAL", "Initial / Advance"), ("BALANCE", "Balance")], default="INITIAL")
+    payment_method = models.CharField(max_length=20, choices=[("ONLINE", "Online"), ("CASH", "Cash"), ("UPI", "Direct UPI")], default="ONLINE")
     verified_at = models.DateTimeField(null=True)
 
 
@@ -99,6 +123,9 @@ class Invoice(UUIDStampedModel):
     def save(self, *args, **kwargs):
         if not self._state.adding:
             raise ValidationError("Issued invoices are immutable; use an approved adjustment workflow.")
+        if not self.invoice_number:
+            from common.sequences import next_invoice_number
+            self.invoice_number = next_invoice_number(self.issue_date)
         return super().save(*args, **kwargs)
 
 

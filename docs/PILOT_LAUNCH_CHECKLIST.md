@@ -1,6 +1,6 @@
 # Controlled pilot launch checklist
 
-Keep `PUBLIC_BOOKING_ENABLED=false` until launch approval and acceptance checks finish. Select the pilot area and technician roster; do not use the example domains or placeholder secrets as deployment values.
+Keep `PUBLIC_BOOKING_ENABLED=false` until launch approval and acceptance checks finish. Refer to the [Provider Integrations and Staging Guide](PROVIDER_INTEGRATIONS_STAGING_GUIDE.md) for step-by-step verification of Firebase authentication, Razorpay advance payments, Cloudinary uploads, and pilot gating. Select the pilot area and technician roster; do not use example domains or placeholder secrets as deployment values.
 
 | Owner role | Before opening booking |
 | --- | --- |

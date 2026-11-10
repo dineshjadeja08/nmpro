@@ -133,7 +133,7 @@ def test_production_otp_uses_provider_without_disclosing_code(monkeypatch, setti
 
 
 @pytest.mark.django_db
-def test_finance_refund_permissions_cap_and_provider_reconciliation(setup_booking, monkeypatch):
+def test_finance_refund_permissions_cap_and_provider_reconciliation(setup_booking, monkeypatch, settings):
     from domains.payments import finance
     from domains.payments.models import FinanceGrant, Payment, PaymentIntent, Refund
 
@@ -154,6 +154,9 @@ def test_finance_refund_permissions_cap_and_provider_reconciliation(setup_bookin
     assert s["client"].get("/api/v1/finance/payments/").status_code == 403
     client = APIClient()
     client.force_authenticate(user=requester)
+    session = client.session
+    session["privileged_verified_at"] = timezone.now().timestamp()
+    session.save()
     body = {"payment_id": str(payment.id), "amount_paise": 20000, "reason_code": "MANUAL_REVIEW"}
     first = client.post("/api/v1/finance/refunds/", body, format="json", HTTP_IDEMPOTENCY_KEY="refund-1")
     assert first.status_code == 201, first.content
@@ -169,9 +172,13 @@ def test_finance_refund_permissions_cap_and_provider_reconciliation(setup_bookin
         def fetch_refund(self, refund_id):
             return {"id": refund_id, "payment_id": "pay_finance", "amount": 20000, "status": "processed"}
 
+    settings.RAZORPAY_ENABLED = True
     monkeypatch.setattr(finance, "get_provider", lambda: Provider())
     reviewer_client = APIClient()
     reviewer_client.force_authenticate(user=approver)
+    rev_session = reviewer_client.session
+    rev_session["privileged_verified_at"] = timezone.now().timestamp()
+    rev_session.save()
     assert reviewer_client.post(f"/api/v1/finance/refunds/{first.json()['id']}/approve/").json()["status"] == "PROCESSING"
     assert client.post(f"/api/v1/finance/refunds/{first.json()['id']}/reconcile/").json()["status"] == "SUCCEEDED"
     assert Refund.objects.get(id=first.json()["id"]).status == "SUCCEEDED"
@@ -281,6 +288,7 @@ def test_whatsapp_outbox_dispatch_requires_opt_in_and_approved_template(setup_bo
 
     provider = Provider()
     monkeypatch.setattr(notification_tasks, "get_whatsapp_provider", lambda: provider)
+    settings.WHATSAPP_ENABLED = True
     settings.WHATSAPP_TEMPLATES = {"BOOKING_CONFIRMED": "booking_confirmed"}
     assert notification_tasks.dispatch_whatsapp_notifications() == 1
     assert notification_tasks.dispatch_whatsapp_notifications() == 0

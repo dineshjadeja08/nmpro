@@ -4,7 +4,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,6 +12,7 @@ from domains.bookings.services import serviceable
 from domains.catalog.models import ServicePackage
 
 from .models import Address
+from .providers.google_maps import GoogleMapsLocationProvider, LocationProviderError
 
 
 class AddressSerializer(serializers.ModelSerializer):
@@ -20,6 +21,21 @@ class AddressSerializer(serializers.ModelSerializer):
         fields = ["id", "line_1", "label", "contact_name", "contact_phone", "house_flat", "street", "locality",
                   "city", "state", "postal_code", "landmark", "latitude", "longitude", "is_default"]
         read_only_fields = ["id", "line_1"]
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            normalized = dict(data)
+            for coord in ("latitude", "longitude"):
+                val = normalized.get(coord)
+                if val in ("", None):
+                    normalized[coord] = None
+                else:
+                    try:
+                        normalized[coord] = round(float(val), 6)
+                    except (TypeError, ValueError):
+                        pass
+            data = normalized
+        return super().to_internal_value(data)
 
     def validate_postal_code(self, value):
         if not re.fullmatch(r"\d{6}", value):
@@ -108,3 +124,147 @@ class ServiceabilityView(APIView):
         zone = serviceable(package, address)
         return Response({"supported": bool(zone), "zone_id": str(zone.id) if zone else None,
                          "reason": None if zone else "This service is not configured for this address."})
+
+
+class ServiceAreaListView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .models import Zone
+        qs = Zone.objects.filter(is_active=True, city__is_active=True).select_related("city").order_by("city__name", "name")
+        if request.query_params.get("postal_code"):
+            qs = qs.filter(postal_code=request.query_params["postal_code"].strip())
+        if request.query_params.get("city"):
+            qs = qs.filter(city__name__iexact=request.query_params["city"].strip())
+        return Response({"results": [
+            {"id": str(z.id), "name": z.name, "city": z.city.name, "state": z.state,
+             "country": z.country, "postal_code": z.postal_code,
+             "locality_aliases": z.locality_aliases, "services_configured": z.services_configured}
+            for z in qs[:200]
+        ]})
+
+
+class ServiceAreaCheckView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def _check(self, postal_code, service_id=None, city=None, locality=None):
+        from .models import ServiceCoverage, Zone
+        clean_pin = (postal_code or "").strip()
+        clean_city = (city or "").strip()
+        clean_locality = (locality or "").strip()
+        if not clean_pin and not clean_city:
+            raise serializers.ValidationError({"postal_code": "postal_code or city is required."})
+
+        qs = Zone.objects.filter(is_active=True, city__is_active=True).select_related("city")
+        if clean_pin:
+            pin_qs = qs.filter(postal_code=clean_pin)
+            if clean_city and pin_qs.filter(city__name__iexact=clean_city).exists():
+                qs = pin_qs.filter(city__name__iexact=clean_city)
+            else:
+                qs = pin_qs
+        else:
+            qs = qs.filter(city__name__iexact=clean_city)
+            if clean_locality:
+                local_matches = [
+                    z
+                    for z in qs
+                    if clean_locality.lower() in z.name.lower()
+                    or any(clean_locality.lower() in str(a).lower() for a in (z.locality_aliases or []))
+                ]
+                if local_matches:
+                    qs = qs.filter(id__in=[z.id for z in local_matches])
+
+        zone = qs.first()
+        if not zone:
+            return Response({"is_supported": False, "supported": False, "service_area": None, "areas": []})
+        if service_id and zone.services_configured:
+            if not ServiceCoverage.objects.filter(zone=zone, service_id=service_id, is_active=True).exists():
+                return Response({"is_supported": False, "supported": False, "service_area": None, "areas": []})
+        area_payload = {"id": str(zone.id), "name": zone.name, "city": zone.city.name,
+                        "state": zone.state, "postal_code": zone.postal_code}
+        return Response({
+            "is_supported": True,
+            "supported": True,
+            "service_area": area_payload,
+            "areas": [{"id": str(z.id), "name": z.name, "slug": z.name.lower().replace(" ", "-"), "postal_code": z.postal_code} for z in qs],
+        })
+
+    def get(self, request):
+        return self._check(
+            request.query_params.get("postal_code") or request.query_params.get("pincode"),
+            request.query_params.get("service_id"),
+            request.query_params.get("city"),
+            request.query_params.get("locality") or request.query_params.get("area"),
+        )
+
+    def post(self, request):
+        return self._check(
+            str(request.data.get("postal_code") or request.data.get("pincode") or ""),
+            request.data.get("service_id"),
+            request.data.get("city"),
+            request.data.get("locality") or request.data.get("area"),
+        )
+
+
+class LocationAutocompleteView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        query = (request.query_params.get("input") or request.query_params.get("q") or "").strip()
+        if len(query) < 2:
+            return Response({"suggestions": []})
+        lat = request.query_params.get("lat")
+        lng = request.query_params.get("lng")
+        city = request.query_params.get("city", "")
+        latitude = float(lat) if lat else None
+        longitude = float(lng) if lng else None
+
+        provider = GoogleMapsLocationProvider()
+        try:
+            suggestions = provider.autocomplete(query, latitude=latitude, longitude=longitude, city=city)
+            return Response({"suggestions": suggestions})
+        except LocationProviderError as exc:
+            return Response({"error": {"message": str(exc), "code": exc.reason}}, status=400)
+
+
+class LocationGeocodeView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        place_id = request.query_params.get("place_id", "").strip()
+        if not place_id:
+            return Response({"error": {"message": "place_id is required", "code": "INVALID_PARAMS"}}, status=400)
+        provider = GoogleMapsLocationProvider()
+        try:
+            result = provider.geocode(place_id)
+            return Response(result)
+        except LocationProviderError as exc:
+            return Response({"error": {"message": str(exc), "code": exc.reason}}, status=400)
+
+
+class LocationReverseGeocodeView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat", "").strip()
+        lng = request.query_params.get("lng", "").strip()
+        if not lat or not lng:
+            return Response({"error": {"message": "lat and lng are required", "code": "INVALID_PARAMS"}}, status=400)
+        try:
+            latitude = float(lat)
+            longitude = float(lng)
+        except ValueError:
+            return Response({"error": {"message": "Invalid coordinates", "code": "INVALID_PARAMS"}}, status=400)
+
+        provider = GoogleMapsLocationProvider()
+        try:
+            result = provider.reverse_geocode(latitude, longitude)
+            return Response(result)
+        except LocationProviderError as exc:
+            return Response({"error": {"message": str(exc), "code": exc.reason}}, status=400)
+

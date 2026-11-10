@@ -138,6 +138,14 @@ def assign_job(actor, booking_id, technician_id, expected_version, reason="", re
     JobOffer.objects.filter(booking=booking, status="OFFERED").exclude(id=offer.id).update(status="WITHDRAWN")
     DispatchAttempt.objects.filter(booking=booking, status="OFFERED").exclude(offer=offer).update(status="WITHDRAWN")
     JobStatusEvent.objects.create(assignment=current, from_status="DISPATCH", to_status="ASSIGNED", actor=actor)
+    if booking.status in ("CONFIRMED", "CONFIRMED_UNPAID", "TECHNICIAN_EN_ROUTE"):
+        from domains.bookings.models import BookingStatusEvent
+        old_b_status = booking.status
+        booking.status = "TECHNICIAN_ASSIGNED"
+        booking.save(update_fields=["status", "updated_at"])
+        BookingStatusEvent.objects.create(booking=booking, from_status=old_b_status,
+                                          to_status="TECHNICIAN_ASSIGNED", actor=actor,
+                                          reason=reason or ("Technician reassigned" if action == "JOB_REASSIGNED" else "Technician assigned"))
     notify(profile.user, "TECHNICIAN_ASSIGNED", booking)
     notify(booking.user, "TECHNICIAN_REASSIGNED" if action == "JOB_REASSIGNED" else "TECHNICIAN_ASSIGNED", booking)
     log(actor, action, "JobAssignment", current.id, {"reason": reason})

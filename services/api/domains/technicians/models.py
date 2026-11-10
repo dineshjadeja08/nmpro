@@ -6,8 +6,28 @@ from common.models import UUIDStampedModel
 
 class TechnicianProfile(UUIDStampedModel):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    employee_code = models.CharField(max_length=24, unique=True, null=True, blank=True)
     display_name = models.CharField(max_length=120, blank=True)
     city = models.CharField(max_length=80, blank=True)
+    alternate_phone = models.CharField(max_length=20, blank=True, default="")
+    virtual_mobile_number = models.CharField(max_length=20, blank=True, default="")
+    email = models.EmailField(blank=True, default="")
+    address = models.CharField(max_length=300, blank=True, default="")
+    pincode = models.CharField(max_length=10, blank=True, default="")
+    service_group = models.CharField(max_length=100, blank=True, default="")
+    profile_type = models.CharField(max_length=50, blank=True, default="")
+    lead_per_day = models.PositiveSmallIntegerField(default=0)
+    job_per_day = models.PositiveSmallIntegerField(default=0)
+    no_of_teams = models.PositiveSmallIntegerField(default=1)
+    sales_person_assigned_name = models.CharField(max_length=120, blank=True, default="")
+    crm_owner_id = models.CharField(max_length=100, blank=True, default="")
+    id_proof_number = models.CharField(max_length=20, blank=True, default="")
+    technician_type = models.CharField(max_length=20, choices=[(t, t) for t in ("PARTNER", "EMPLOYEE", "CONTRACT")], default="PARTNER")
+    joined_at = models.DateField(null=True, blank=True)
+    languages = models.JSONField(default=list, blank=True)
+    whatsapp_notifications_enabled = models.BooleanField(default=False)
+    internal_notes = models.TextField(max_length=2000, blank=True, default="")
+    supported_services = models.ManyToManyField("catalog.Service", blank=True, related_name="technicians")
     experience_years = models.PositiveSmallIntegerField(default=0)
     bio = models.CharField(max_length=500, blank=True)
     requested_zone_ids = models.JSONField(default=list)
@@ -17,6 +37,12 @@ class TechnicianProfile(UUIDStampedModel):
     is_online = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.employee_code:
+            from common.sequences import next_technician_code
+            self.employee_code = next_technician_code()
+        return super().save(*args, **kwargs)
 
 
 class TechnicianSkill(UUIDStampedModel):
@@ -55,16 +81,30 @@ class TechnicianTimeOff(UUIDStampedModel):
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
     reason = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=16, choices=[(s, s) for s in ("PENDING", "APPROVED", "REJECTED")], default="PENDING")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="reviewed_leaves")
+    review_note = models.CharField(max_length=240, blank=True, default="")
 
     class Meta:
         constraints = [models.CheckConstraint(condition=models.Q(end_at__gt=models.F("start_at")), name="technician_positive_timeoff")]
+
+
+class TechnicianCompanyMember(UUIDStampedModel):
+    technician = models.ForeignKey(TechnicianProfile, on_delete=models.CASCADE, related_name="company_members")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="technician_company_memberships")
+    role = models.CharField(max_length=20, choices=[(r, r) for r in ("OWNER", "MANAGER", "TECHNICIAN")], default="TECHNICIAN")
+    is_active = models.BooleanField(default=True)
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="added_company_members")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["technician", "user"], name="unique_technician_company_member")]
 
 
 class TechnicianDocument(UUIDStampedModel):
     technician = models.ForeignKey(TechnicianProfile, on_delete=models.PROTECT, related_name="documents")
     assignment = models.ForeignKey("technicians.JobAssignment", on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="photos")
-    kind = models.CharField(max_length=24, choices=[(s, s) for s in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER")])
+    kind = models.CharField(max_length=24, choices=[(s, s) for s in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT")])
     file = models.FileField(upload_to="private/technicians/%Y/%m/")
     content_type = models.CharField(max_length=50)
     status = models.CharField(max_length=20, default="PENDING")

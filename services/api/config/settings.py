@@ -75,7 +75,10 @@ CACHES = {"default": {"BACKEND": "django_redis.cache.RedisCache", "LOCATION": RE
     "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "common.jwt.BearerAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "EXCEPTION_HANDLER": "common.errors.exception_handler",
@@ -83,6 +86,10 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"],
     "DEFAULT_THROTTLE_RATES": {"anon": "120/min", "user": "120/min", "otp_request": "5/min", "otp_verify": "20/min"},
 }
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
+JWT_ACCESS_SECONDS = int(os.getenv("JWT_ACCESS_SECONDS", "3600"))
+JWT_REFRESH_SECONDS = int(os.getenv("JWT_REFRESH_SECONDS", str(60 * 60 * 24 * 14)))
+PUSH_PROVIDER = os.getenv("PUSH_PROVIDER", "")
 BOOKING_HOLD_MINUTES = int(os.getenv("BOOKING_HOLD_MINUTES", "5"))
 if not 1 <= BOOKING_HOLD_MINUTES <= 30:
     raise ImproperlyConfigured("BOOKING_HOLD_MINUTES must be between 1 and 30")
@@ -145,8 +152,22 @@ if SMS_PROVIDER == "MSG91" and not (MSG91_AUTH_KEY and SMS_TEMPLATES and SMS_VAR
     raise ImproperlyConfigured("MSG91 SMS needs auth, approved templates and a variable name")
 if EMAIL_PROVIDER == "SMTP" and not all((EMAIL_FROM_ADDRESS, EMAIL_HOST, EMAIL_HOST_USER, EMAIL_HOST_PASSWORD)):
     raise ImproperlyConfigured("SMTP email requires sender, host, user and password")
-if ENVIRONMENT in {"staging", "production"} and not (MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID):
-    raise ImproperlyConfigured("Managed OTP requires MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID")
+FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
+FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "")
+FIREBASE_AUTH_DOMAIN = os.getenv("FIREBASE_AUTH_DOMAIN", "")
+
+CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
+CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
+CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
+CLOUDINARY_ENABLED = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+LOCATION_PROVIDER_TIMEOUT_SECONDS = int(os.getenv("LOCATION_PROVIDER_TIMEOUT_SECONDS", "6"))
+LOCATION_AUTOCOMPLETE_CACHE_SECONDS = int(os.getenv("LOCATION_AUTOCOMPLETE_CACHE_SECONDS", "300"))
+LOCATION_REVERSE_CACHE_SECONDS = int(os.getenv("LOCATION_REVERSE_CACHE_SECONDS", "86400"))
+
+if ENVIRONMENT in {"staging", "production"} and not (FIREBASE_PROJECT_ID or (MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID)):
+    raise ImproperlyConfigured("Customer authentication in managed environments requires Firebase or approved OTP credentials")
 if RAZORPAY_ENABLED:
     if not all((RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET)):
         raise ImproperlyConfigured("Razorpay requires API and webhook credentials")

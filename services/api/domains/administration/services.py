@@ -19,9 +19,19 @@ class FinanceConflict(APIException):
     default_code = "FINANCE_CONFLICT"
 
 
-def audit(actor, action, resource, instance_id, summary=None, request_id=""):
+def audit(actor, action, resource, instance_id, summary=None, request_id="", request=None):
+    ip_address = None
+    user_agent = ""
+    if request is not None:
+        raw_req = getattr(request, "_request", request)
+        forwarded = raw_req.META.get("HTTP_X_FORWARDED_FOR", "")
+        ip_address = forwarded.split(",")[0].strip() if forwarded else raw_req.META.get("REMOTE_ADDR") or None
+        user_agent = (raw_req.META.get("HTTP_USER_AGENT") or "")[:255]
+        if not request_id:
+            request_id = getattr(raw_req, "request_id", "") or ""
     AdminAuditLog.objects.create(actor=actor, action=action, resource_type=resource,
-        resource_id=str(instance_id), summary=summary or {}, request_id=request_id[:80])
+        resource_id=str(instance_id), summary=summary or {}, request_id=str(request_id)[:80],
+        ip_address=ip_address, user_agent=user_agent)
 
 
 @transaction.atomic

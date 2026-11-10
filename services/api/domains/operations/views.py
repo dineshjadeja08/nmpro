@@ -67,7 +67,12 @@ def dates(request):
 def booking_query(request):
     start, end = dates(request)
     qs = Booking.objects.filter(slot__isnull=False, package__isnull=False, address__isnull=False,
-        status__in=["AWAITING_PAYMENT", "CONFIRMED", "CONFIRMED_UNPAID", "CANCELLED", "EXPIRED"])
+        status__in=[
+            "REQUESTED", "AWAITING_PAYMENT", "PENDING_PAYMENT", "PAYMENT_FAILED",
+            "CONFIRMED", "CONFIRMED_UNPAID",
+            "TECHNICIAN_ASSIGNED", "TECHNICIAN_EN_ROUTE", "TECHNICIAN_ARRIVED",
+            "IN_PROGRESS", "COMPLETED", "CLOSED", "CANCELLED", "EXPIRED",
+        ])
     if start:
         qs = qs.filter(slot__start_at__date__gte=start)
     if end:
@@ -81,7 +86,8 @@ def booking_query(request):
                 value = serializers.UUIDField().run_validation(value)
             qs = qs.filter(**{lookup: value})
     if request.query_params.get("q"):
-        qs = qs.filter(reference__icontains=request.query_params["q"][:40])
+        q = request.query_params["q"][:40]
+        qs = qs.filter(Q(reference__icontains=q) | Q(user__customer_code__icontains=q))
     for param, lookup in (("service_name", "service__name__icontains"),
                           ("zone_name", "slot__zone__name__icontains"),
                           ("technician_name", "technician_assignment__technician__display_name__icontains")):
@@ -91,24 +97,48 @@ def booking_query(request):
     if sort not in ("-created_at", "created_at", "slot__start_at", "-slot__start_at"):
         raise serializers.ValidationError("Invalid sort order.")
     return qs.select_related("user", "service", "package", "address", "slot__zone", "price_snapshot",
-                             "technician_assignment__technician").annotate(urgent_escalation=Exists(
+                             "invoice", "technician_assignment__technician__user").annotate(urgent_escalation=Exists(
                              OperationalEscalation.objects.filter(booking_id=OuterRef("pk"), priority="URGENT",
                                  status__in=["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"]))).order_by(sort, "id")
 
 
 def booking_data(b):
     assignment = getattr(b, "technician_assignment", None)
-    return {"id": str(b.id), "reference": b.reference, "version": b.version, "status": b.status,
-        "payment_status": b.payment_status, "customer_id": b.user_id, "customer_phone": b.user.phone_e164,
-        "customer_name": b.address.contact_name, "service": b.service.name, "package": b.package.name,
-        "service_id": str(b.service_id), "zone_id": str(b.slot.zone_id), "zone": b.slot.zone.name,
-        "start_at": b.slot.start_at, "end_at": b.slot.end_at,
-        "address": {"line_1": b.address.line_1, "locality": b.address.locality,
-                    "city": b.address.city, "postal_code": b.address.postal_code},
-        "price_paise": b.price_snapshot.total_paise if hasattr(b, "price_snapshot") else None,
-        "price_lines": b.price_snapshot.lines if hasattr(b, "price_snapshot") else [],
+    invoice = getattr(b, "invoice", None)
+    snap = getattr(b, "price_snapshot", None)
+    total_paise = snap.total_paise if snap else 0
+    addr = getattr(b, "address", None)
+    slot = getattr(b, "slot", None)
+    pkg = getattr(b, "package", None)
+    zone_obj = slot.zone if slot else (addr.zone if addr and addr.zone_id else None)
+    customer_name = (addr.contact_name if addr and addr.contact_name else "") or (getattr(b.user, "first_name", "") if b.user else "") or (getattr(b.user, "phone_e164", "") if b.user else "")
+    return {"id": str(b.id), "reference": b.reference, "booking_number": b.reference,
+        "work_order_number": b.reference if b.is_manual_work_order else "",
+        "invoice_number": invoice.invoice_number if invoice else "",
+        "customer_code": getattr(b.user, "customer_code", "") if b.user else "",
+        "version": b.version, "status": b.status,
+        "payment_status": b.payment_status, "customer_id": b.user_id,
+        "customer_phone": b.user.phone_e164 if b.user else "",
+        "customer_name": customer_name,
+        "service": b.service.name if b.service else "",
+        "package": pkg.name if pkg else "Custom Work Order",
+        "service_id": str(b.service_id),
+        "zone_id": str(zone_obj.id) if zone_obj else None,
+        "zone": zone_obj.name if zone_obj else (addr.city if addr else ""),
+        "start_at": slot.start_at if slot else (b.confirmed_at or b.created_at),
+        "end_at": slot.end_at if slot else None,
+        "problem_description": b.problem_description,
+        "closed_at": b.closed_at,
+        "address": {"line_1": addr.line_1, "locality": addr.locality,
+                    "city": addr.city, "postal_code": addr.postal_code} if addr else None,
+        "price_paise": snap.total_paise if snap else None,
+        "advance_paise": snap.advance_paise if snap else 0,
+        "offline_collected_paise": b.offline_collected_paise,
+        "balance_due_paise": 0 if b.payment_status == "PAID" else max(0, total_paise - b.offline_collected_paise),
+        "price_lines": snap.lines if snap else [],
         "priority": "URGENT" if getattr(b, "urgent_escalation", False) else "NORMAL",
         "technician": {"id": str(assignment.technician_id), "name": assignment.technician.display_name,
+                       "phone": assignment.technician.user.phone_e164,
                        "status": assignment.status} if assignment else None}
 
 
@@ -210,7 +240,7 @@ class OperationsBookingSlotsView(APIView):
 
 class DispatchInput(serializers.Serializer):
     technician_id = serializers.UUIDField()
-    expected_version = serializers.IntegerField(min_value=1)
+    expected_version = serializers.IntegerField(min_value=1, required=False)
     reason = serializers.CharField(max_length=240, allow_blank=True, required=False)
 
 
@@ -218,21 +248,30 @@ class OperationsBookingActionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, booking_id, action):
+        if action in ("confirm", "approve", "start", "complete", "record-balance"):
+            from domains.administration.views_bookings_prd import AdminBookingActionView
+            return AdminBookingActionView().post(request, booking_id, action)
         if action in ("assign", "reassign", "offer"):
             data = DispatchInput(data=request.data)
             data.is_valid(raise_exception=True)
             values = data.validated_data
+            version = values.get("expected_version") or get_object_or_404(Booking, id=booking_id).version
             if action == "offer":
-                offer = offer_job(request.user, booking_id, values["technician_id"], values["expected_version"])
+                offer = offer_job(request.user, booking_id, values["technician_id"], version)
                 return Response({"id": str(offer.id), "status": offer.status})
             assignment = assign_job(request.user, booking_id, values["technician_id"],
-                values["expected_version"], values.get("reason", ""), reassign=action == "reassign")
+                version, values.get("reason", ""), reassign=action == "reassign")
             return Response({"id": str(assignment.id), "status": assignment.status})
         if action == "cancel":
             require_role(request.user, "SUPPORT_AGENT", "OPERATIONS_MANAGER")
             version = serializers.IntegerField(min_value=1).run_validation(request.data.get("expected_version"))
             reason = serializers.CharField(max_length=240).run_validation(request.data.get("reason"))
             booking = get_object_or_404(Booking, id=booking_id)
+            if booking.status != "CONFIRMED_UNPAID":
+                if booking.version != version:
+                    raise JobConflict("Booking changed. Refresh before cancelling.")
+                from domains.administration.views_bookings_prd import AdminBookingActionView
+                return AdminBookingActionView().post(request, booking_id, "cancel")
             cancelled = cancel_booking(booking.user, booking.id, version, reason, actor=request.user)
             return Response({"status": cancelled.status, "version": cancelled.version})
         if action == "reschedule":
@@ -268,7 +307,10 @@ class OperationsDispatchView(APIView):
 
     def get(self, request):
         require_role(request.user, "OPERATIONS_VIEWER", "DISPATCH_OPERATOR", "SUPPORT_AGENT", "OPERATIONS_MANAGER")
-        bookings = booking_query(request).filter(status__in=["CONFIRMED", "CONFIRMED_UNPAID"]).prefetch_related("technician_offers")
+        bookings = booking_query(request).filter(status__in=[
+            "REQUESTED", "CONFIRMED", "CONFIRMED_UNPAID",
+            "TECHNICIAN_ASSIGNED", "TECHNICIAN_EN_ROUTE", "TECHNICIAN_ARRIVED", "IN_PROGRESS", "COMPLETED",
+        ]).prefetch_related("technician_offers")
         groups = {key: [] for key in ("UNASSIGNED", "OFFERED", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "EXCEPTIONS")}
         for b in bookings[:100]:
             assignment = getattr(b, "technician_assignment", None)
@@ -278,7 +320,7 @@ class OperationsDispatchView(APIView):
                 key = "OFFERED"
             else:
                 key = "UNASSIGNED"
-            if b.slot.end_at < timezone.now() and key != "COMPLETED":
+            if b.slot and b.slot.end_at < timezone.now() and key != "COMPLETED":
                 key = "EXCEPTIONS"
             groups[key].append(booking_data(b))
         return Response({"groups": groups, "rule": rule_data(active_rule())})
@@ -296,7 +338,22 @@ class OperationsCandidatesView(APIView):
 
     def get(self, request):
         require_role(request.user, "OPERATIONS_VIEWER", "DISPATCH_OPERATOR", "OPERATIONS_MANAGER")
-        booking_id = serializers.UUIDField().run_validation(request.query_params.get("booking_id"))
+        raw_booking_id = request.query_params.get("booking_id")
+        if not raw_booking_id:
+            rows = [
+                {
+                    "id": str(a.id),
+                    "booking_reference": a.booking.reference,
+                    "service": a.booking.service.name if a.booking.service else "",
+                    "technician": a.technician.display_name,
+                    "phone": a.technician.user.phone_e164,
+                    "status": a.status,
+                    "assigned_at": a.assigned_at,
+                }
+                for a in JobAssignment.objects.select_related("booking__service", "technician__user").order_by("-assigned_at")[:50]
+            ]
+            return Response({"count": len(rows), "results": rows, "candidates": rows, "rule": rule_data(active_rule())})
+        booking_id = serializers.UUIDField().run_validation(raw_booking_id)
         booking = get_object_or_404(Booking.objects.select_related("slot__zone", "package"), id=booking_id)
         return Response({"candidates": ranked_candidates(booking), "rule": rule_data(active_rule())})
 
@@ -406,8 +463,9 @@ class OperationsCustomersView(APIView):
         require_role(request.user, "SUPPORT_AGENT", "OPERATIONS_MANAGER", "OPERATIONS_VIEWER")
         qs = get_user_model().objects.filter(booking__isnull=False).annotate(booking_count=Count("booking", distinct=True)).distinct().order_by("id")
         if request.query_params.get("q"):
-            qs = qs.filter(phone_e164__icontains=request.query_params["q"][:20])
-        return paged(request, qs, lambda u: {"id": u.id, "phone": u.phone_e164,
+            term = request.query_params["q"][:20]
+            qs = qs.filter(Q(phone_e164__icontains=term) | Q(customer_code__icontains=term))
+        return paged(request, qs, lambda u: {"id": u.id, "customer_code": u.customer_code, "phone": u.phone_e164,
             "bookings": u.booking_count})
 
 
@@ -419,7 +477,7 @@ class OperationsCustomerView(APIView):
         user = get_object_or_404(get_user_model().objects.filter(booking__isnull=False).distinct(), id=customer_id)
         bookings = Booking.objects.filter(user=user, slot__isnull=False).select_related(
             "user", "service", "package", "address", "slot__zone", "price_snapshot", "technician_assignment__technician").order_by("-created_at")[:30]
-        return Response({"id": user.id, "phone": user.phone_e164,
+        return Response({"id": user.id, "customer_code": user.customer_code, "phone": user.phone_e164,
             "bookings": [booking_data(b) for b in bookings],
             "tickets": [ticket_data(t) for t in SupportTicket.objects.filter(customer=user).order_by("-created_at")[:30]]})
 

@@ -1,10 +1,14 @@
 export type Package = { id: string; name: string; pricing_model: "FIXED_PRICE" | "INSPECTION_BASED"; duration_minutes: number; inclusions: string[]; exclusions: string[] };
-export type Address = { id: string; line_1: string; label: string; contact_name: string; contact_phone: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; landmark: string; is_default: boolean };
+export type Address = { id: string; line_1: string; label: string; contact_name: string; contact_phone: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; landmark: string; latitude?: number | null; longitude?: number | null; is_default: boolean };
 export type Slot = { id: string; start_at: string; end_at: string; remaining: number; version: number };
 export type Hold = { id: string; expires_at: string };
 export type NotificationPreferences = { whatsapp_opt_in: boolean; sms_opt_in: boolean; email_opt_in: boolean };
-export type Quote = { id: string; hold_id: string; expires_at: string; lines: { code: string; amount_paise: number }[]; total_paise: number; currency: string; pricing_policy_id: string; pricing_version: number; payment_policy: "PREPAID" | "PAY_AT_VISIT" };
-export type Booking = { id: string; reference: string; status: string; payment_status: string; payment_expires_at?: string | null; invoice_available?: boolean; payment_attempt_unresolved?: boolean; version: number; service: string; package: string; package_id: string; address_id: string; can_cancel: boolean; can_reschedule: boolean; address: { label: string; line_1: string; locality: string; city: string; postal_code: string }; slot: { start_at: string; end_at: string }; price: { lines: { code: string; amount_paise: number }[]; total_paise: number; currency: string }; events: { from_status: string; to_status: string; created_at: string }[] };
+export type Quote = { id: string; hold_id: string; expires_at: string; lines: { code: string; amount_paise: number }[]; total_paise: number; advance_paise?: number; remaining_balance_paise?: number; currency: string; pricing_policy_id: string; pricing_version: number; payment_policy: "PREPAID" | "PAY_AT_VISIT" | "ADVANCE"; advance_type?: string; advance_percentage?: number };
+export type LocationSuggestion = { id: string; description: string; main_text: string; secondary_text: string };
+export type ResolvedLocation = { formatted_address: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; latitude: number | null; longitude: number | null };
+export type ServiceAreaInfo = { id: string; name: string; city: string; state: string; postal_code: string };
+export type ServiceAreaCheckResult = { is_supported: boolean; supported: boolean; service_area: ServiceAreaInfo | null; areas: Array<{ id: string; name: string; slug: string; postal_code: string }> };
+export type Booking = { id: string; reference: string; status: string; payment_status: string; payment_expires_at?: string | null; invoice_available?: boolean; payment_attempt_unresolved?: boolean; version: number; problem_description?: string; offline_collected_paise?: number; start_otp_code?: string; technician?: { name: string; phone?: string; status: string } | null; can_review?: boolean; review?: { rating: number; comment: string } | null; service: string; package: string; package_id: string; address_id: string; can_cancel: boolean; can_reschedule: boolean; address: { label: string; line_1: string; locality: string; city: string; postal_code: string }; slot: { start_at: string; end_at: string }; price: { lines: { code: string; amount_paise: number }[]; total_paise: number; advance_paise?: number; remaining_balance_paise?: number; currency: string }; events: { from_status: string; to_status: string; created_at: string }[] };
 export type JobQuotation = { id: string; status: string; labour_paise: number; parts_paise: number; tax_paise: number; total_paise: number; valid_until: string; items: { description: string; quantity: number; unit_paise: number; total_paise: number }[] };
 
 const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -56,6 +60,11 @@ export const bookingApi = {
     await refreshCsrf();
     return result;
   },
+  firebaseAuth: async (idToken: string) => {
+    const result = await bookingRequest<{ id: number; phone_e164: string }>("/auth/firebase/", "POST", { id_token: idToken });
+    await refreshCsrf();
+    return result;
+  },
   logout: async () => { const result = await bookingRequest<void>("/auth/logout/", "POST"); csrfToken = ""; return result; },
   addresses: () => bookingRequest<{ addresses: Address[] }>("/customers/addresses/"),
   createAddress: (body: Omit<Address, "id" | "line_1">) => bookingRequest<Address>("/customers/addresses/", "POST", body),
@@ -66,9 +75,10 @@ export const bookingApi = {
   hold: (package_id: string, address_id: string, slot_id: string) => bookingRequest<Hold>("/checkout/holds/", "POST", { package_id, address_id, slot_id }),
   release: (id: string) => bookingRequest<void>(`/checkout/holds/${id}/`, "DELETE"),
   quote: (hold_id: string) => bookingRequest<Quote>("/checkout/quote/", "POST", { hold_id }),
-  confirm: (hold_id: string, quote_id: string, accepted_total_paise: number, key: string) => bookingRequest<Booking>("/bookings/", "POST", { hold_id, quote_id, accepted_total_paise, terms_accepted: true }, key),
+  confirm: (hold_id: string, quote_id: string, accepted_total_paise: number, key: string, problem_description = "") => bookingRequest<Booking>("/bookings/", "POST", { hold_id, quote_id, accepted_total_paise, terms_accepted: true, problem_description }, key),
   bookings: (page = 1) => bookingRequest<{ count: number; results: Booking[] }>(`/bookings/?page=${page}`),
   booking: (id: string) => bookingRequest<Booking>(`/bookings/${id}/`),
+  submitReview: (id: string, rating: number, comment: string) => bookingRequest<{ id: string; rating: number; comment: string }>(`/bookings/${id}/review/`, "POST", { rating, comment }),
   quotations: (id: string) => bookingRequest<{ quotations: JobQuotation[] }>(`/bookings/${id}/quotations/`),
   quotationDecision: (id: string, quoteId: string, action: "approve" | "reject") => bookingRequest<JobQuotation>(`/bookings/${id}/quotations/${quoteId}/${action}/`, "POST"),
   invoiceUrl: (id: string) => `${base}/api/v1/bookings/${encodeURIComponent(id)}/invoice/`,
@@ -76,6 +86,27 @@ export const bookingApi = {
   saveNotificationPreferences: (values: NotificationPreferences) => bookingRequest<NotificationPreferences>("/customers/notification-preferences/", "PUT", values),
   paymentOrder: (id: string, key: string) => bookingRequest<{ order_id: string; key_id: string; amount_paise: number; currency: string; expires_at: string }>(`/bookings/${id}/payment-order/`, "POST", {}, key),
   verifyPayment: (id: string, razorpay_order_id: string, razorpay_payment_id: string, razorpay_signature: string) => bookingRequest<{ booking_id: string; status: string; payment_status: string }>(`/bookings/${id}/payment-verify/`, "POST", { razorpay_order_id, razorpay_payment_id, razorpay_signature }),
+  balancePaymentOrder: (id: string, key: string) => bookingRequest<{ order_id: string; key_id: string; amount_paise: number; currency: string; expires_at: string }>(`/bookings/${id}/balance-order/`, "POST", {}, key),
+  verifyBalancePayment: (id: string, razorpay_order_id: string, razorpay_payment_id: string, razorpay_signature: string) => bookingRequest<{ booking_id: string; status: string; payment_status: string }>(`/bookings/${id}/balance-verify/`, "POST", { razorpay_order_id, razorpay_payment_id, razorpay_signature }),
   cancel: (id: string, expected_version: number) => bookingRequest<{ status: string; version: number }>(`/bookings/${id}/cancel/`, "POST", { expected_version }),
   reschedule: (id: string, new_hold_id: string, expected_version: number) => bookingRequest<{ status: string; version: number }>(`/bookings/${id}/reschedule/`, "POST", { new_hold_id, expected_version }),
+  locationAutocomplete: (input: string, lat?: number, lng?: number, city?: string) => {
+    const params = new URLSearchParams({ input });
+    if (lat != null) params.set("lat", String(lat));
+    if (lng != null) params.set("lng", String(lng));
+    if (city) params.set("city", city);
+    return bookingRequest<{ suggestions: LocationSuggestion[] }>(`/location/autocomplete/?${params}`);
+  },
+  locationGeocode: (placeId: string) =>
+    bookingRequest<ResolvedLocation>(`/location/geocode/?place_id=${encodeURIComponent(placeId)}`),
+  locationReverseGeocode: (lat: number, lng: number) =>
+    bookingRequest<ResolvedLocation>(`/location/reverse-geocode/?lat=${lat}&lng=${lng}`),
+  serviceAreaCheck: (params: { postal_code?: string; city?: string; locality?: string; service_id?: string }) => {
+    const query = new URLSearchParams();
+    if (params.postal_code) query.set("postal_code", params.postal_code);
+    if (params.city) query.set("city", params.city);
+    if (params.locality) query.set("locality", params.locality);
+    if (params.service_id) query.set("service_id", params.service_id);
+    return bookingRequest<ServiceAreaCheckResult>(`/service-areas/check/?${query}`);
+  },
 };

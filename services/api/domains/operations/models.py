@@ -41,6 +41,8 @@ class Lead(UUIDStampedModel):
     area = models.CharField(max_length=100, blank=True)
     city = models.CharField(max_length=80, blank=True)
     pincode = models.CharField(max_length=6, blank=True)
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     preferred_date = models.DateField(null=True, blank=True)
     preferred_time = models.TimeField(null=True, blank=True)
     urgency = models.CharField(max_length=12, choices=[(s, s) for s in ("NORMAL", "SOON", "URGENT")], default="NORMAL")
@@ -52,6 +54,14 @@ class Lead(UUIDStampedModel):
     internal_notes = models.TextField(max_length=4000, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="created_leads")
     converted_booking = models.OneToOneField("bookings.Booking", on_delete=models.PROTECT, null=True, blank=True)
+    quoted_amount_paise = models.PositiveBigIntegerField(default=0)
+    advance_amount_paise = models.PositiveBigIntegerField(default=0)
+    manual_paid_paise = models.PositiveBigIntegerField(default=0)
+    payment_status = models.CharField(max_length=20, default="NOT_REQUIRED")
+    payment_link_url = models.URLField(max_length=500, blank=True, default="")
+    service_items = models.JSONField(default=list)
+    last_contacted_at = models.DateTimeField(null=True, blank=True)
+    last_activity_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["status", "-created_at"]), models.Index(fields=["follow_up_at"])]

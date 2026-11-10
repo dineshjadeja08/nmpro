@@ -51,14 +51,14 @@ def request_refund(actor, payment_id, amount_paise, reason_code, key):
 
 def approve_refund(actor, refund_id):
     require_finance_role(actor, "REFUND_APPROVER", "FINANCE_ADMIN")
-    if not settings.RAZORPAY_ENABLED:
-        raise PaymentUnavailable("Refund approval needs an enabled, verified payment provider.")
     with transaction.atomic():
         refund = Refund.objects.select_for_update().select_related("payment").filter(id=refund_id).first()
         if not refund or refund.status != "REQUESTED":
             raise Conflict("Refund is no longer awaiting approval.")
         if refund.initiated_by_id == actor.id:
             raise Conflict("A different finance user must approve this refund.")
+        if not settings.RAZORPAY_ENABLED:
+            raise PaymentUnavailable("Refund approval needs an enabled, verified payment provider.")
         refund.status = "APPROVED"
         refund.approved_by = actor
         refund.save(update_fields=["status", "approved_by", "updated_at"])

@@ -10,3 +10,9 @@ class UUIDStampedModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class SequenceCounter(models.Model):
+    prefix = models.CharField(max_length=40, primary_key=True)
+    last_value = models.PositiveBigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)

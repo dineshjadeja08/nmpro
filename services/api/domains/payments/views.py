@@ -2,6 +2,7 @@ import json
 
 from django.conf import settings
 from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -14,10 +15,13 @@ from .finance import approve_refund, reconcile_refund, request_refund, require_f
 from .models import Invoice, Payment, PaymentEvent, ReconciliationException, Refund
 from .providers.razorpay import PaymentUnavailable
 from .services import (
+    create_balance_payment_order,
     create_payment_order,
     get_provider,
     process_payment_event,
+    record_captured_balance_payment,
     record_captured_payment,
+    record_collected_balance,
     record_webhook_event,
 )
 
@@ -48,16 +52,62 @@ class VerifyInput(serializers.Serializer):
 class PaymentVerifyView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, booking_id):
+    def post(self, request, booking_id=None):
         data = VerifyInput(data=request.data)
         data.is_valid(raise_exception=True)
         values = data.validated_data
-        if not Booking.objects.filter(id=booking_id, user=request.user, payment_order__provider_order_id=values["razorpay_order_id"]).exists():
+        target_booking_id = booking_id or request.data.get("booking_id")
+        qs = Booking.objects.filter(user=request.user, payment_order__provider_order_id=values["razorpay_order_id"])
+        if target_booking_id:
+            qs = qs.filter(id=target_booking_id)
+        if not qs.exists():
             raise Conflict("Payment order does not belong to this booking.")
         if not get_provider().verify_checkout(values["razorpay_order_id"], values["razorpay_payment_id"],
                                                values["razorpay_signature"]):
             raise Conflict("Payment signature is invalid.")
         booking = record_captured_payment(values["razorpay_order_id"], values["razorpay_payment_id"])
+        return Response({"booking_id": str(booking.id), "status": booking.status,
+                         "payment_status": booking.payment_status})
+
+
+class BalancePaymentOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        order = create_balance_payment_order(request.user, booking_id, request.headers.get("Idempotency-Key", ""))
+        return Response({"order_id": order.provider_order_id, "key_id": settings.RAZORPAY_KEY_ID,
+                         "amount_paise": order.amount_paise, "currency": order.currency,
+                         "expires_at": order.expires_at, "status": order.status}, status=201)
+
+
+class BalancePaymentVerifyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        data = VerifyInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        if not Booking.objects.filter(id=booking_id, user=request.user, balance_payment_order__provider_order_id=values["razorpay_order_id"]).exists():
+            raise Conflict("Balance payment order does not belong to this booking.")
+        if not get_provider().verify_checkout(values["razorpay_order_id"], values["razorpay_payment_id"],
+                                               values["razorpay_signature"]):
+            raise Conflict("Payment signature is invalid.")
+        booking = record_captured_balance_payment(values["razorpay_order_id"], values["razorpay_payment_id"])
+        return Response({"booking_id": str(booking.id), "status": booking.status,
+                         "payment_status": booking.payment_status})
+
+
+class BalanceCollectInput(serializers.Serializer):
+    method = serializers.ChoiceField(choices=["CASH", "UPI"], default="CASH")
+
+
+class BalanceCollectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        data = BalanceCollectInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        booking = record_collected_balance(request.user, booking_id, method=data.validated_data["method"])
         return Response({"booking_id": str(booking.id), "status": booking.status,
                          "payment_status": booking.payment_status})
 
@@ -223,3 +273,40 @@ class CustomerPaymentHistoryView(APIView):
                                        "refunds": [{"id": str(r.id), "amount_paise": r.amount_paise,
                                                     "status": r.status} for r in p.refunds.all()]}
                                       for p in payments[(page - 1) * size:page * size]]})
+
+
+class AdminBookingAdvanceOrderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        from domains.administration.rbac import require
+        from domains.administration.services import audit
+        require(request.user, "VIEW_ADMIN")
+        booking = get_object_or_404(Booking, id=booking_id)
+        key = request.headers.get("Idempotency-Key") or f"admin-order-{booking.id}"
+        order = create_payment_order(booking.user, booking.id, key)
+        audit(request.user, "ADMIN_ADVANCE_ORDER_CREATED", "PaymentIntent", order.id,
+              {"booking_id": str(booking.id), "order_id": order.provider_order_id}, request=request)
+        return Response({
+            "id": str(order.id),
+            "provider_order_id": order.provider_order_id,
+            "order_id": order.provider_order_id,
+            "key_id": settings.RAZORPAY_KEY_ID,
+            "amount_paise": order.amount_paise,
+            "currency": order.currency,
+            "expires_at": order.expires_at,
+            "status": order.status,
+        }, status=201)
+
+
+class AdminBookingInvoiceView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, booking_id):
+        from domains.administration.rbac import require
+        require(request.user, "VIEW_ADMIN")
+        invoice = Invoice.objects.filter(booking_id=booking_id, status="ISSUED").first()
+        if not invoice or not invoice.document:
+            raise Http404()
+        return FileResponse(invoice.document.open("rb"), content_type="application/pdf",
+                            as_attachment=True, filename=f"{invoice.invoice_number}.pdf")

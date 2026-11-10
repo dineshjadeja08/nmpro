@@ -99,6 +99,7 @@ class BookingInput(serializers.Serializer):
     quote_id = serializers.UUIDField()
     accepted_total_paise = serializers.IntegerField(min_value=0)
     terms_accepted = serializers.BooleanField()
+    problem_description = serializers.CharField(max_length=2000, allow_blank=True, required=False, default="")
 
     def validate_terms_accepted(self, value):
         if not value:
@@ -115,6 +116,7 @@ class BookingListView(APIView):
         bookings = Booking.objects.filter(user=request.user, package__isnull=False, address__isnull=False,
                                           slot__isnull=False, price_snapshot__isnull=False).select_related(
             "service", "package", "address", "slot", "price_snapshot", "invoice", "payment_order",
+            "technician_assignment__technician__user", "review",
         ).prefetch_related("events").order_by("-created_at")
         return Response({"count": bookings.count(), "page": page,
                          "results": [serialize_booking(b) for b in bookings[(page - 1) * size:page * size]]})
@@ -127,8 +129,9 @@ class BookingListView(APIView):
         booking, created = confirm_booking(request.user, data.validated_data["hold_id"],
                                            data.validated_data["quote_id"],
                                            request.headers.get("Idempotency-Key", ""),
-                                           data.validated_data["accepted_total_paise"])
-        booking = Booking.objects.select_related("service", "package", "address", "slot", "price_snapshot", "invoice", "payment_order").prefetch_related("events").get(id=booking.id)
+                                           data.validated_data["accepted_total_paise"],
+                                           problem_description=data.validated_data.get("problem_description", ""))
+        booking = Booking.objects.select_related("service", "package", "address", "slot", "price_snapshot", "invoice", "payment_order", "technician_assignment__technician__user", "review").prefetch_related("events").get(id=booking.id)
         return Response(serialize_booking(booking), status=201 if created else 200)
 
 
@@ -138,6 +141,7 @@ class BookingDetailView(APIView):
     def get(self, request, booking_id):
         booking = get_object_or_404(Booking.objects.select_related(
             "service", "package", "address", "slot", "price_snapshot", "invoice", "payment_order",
+            "technician_assignment__technician__user", "review",
         ).prefetch_related("events"), id=booking_id, user=request.user, price_snapshot__isnull=False)
         return Response(serialize_booking(booking))
 
