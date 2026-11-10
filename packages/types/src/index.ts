@@ -129,3 +129,4 @@ export interface ApiErrorBody { error: { code: string; message: string; fields: 
 export interface ServiceabilityRequest { service_id: string; address_id: string; }
 export interface AvailabilitySlot { id: string; start_at: string; end_at: string; remaining: number; version: number; }
 export interface AvailabilityResponse { slots: AvailabilitySlot[]; }
+export * from "./operations";

@@ -1,63 +1,272 @@
-export type Booking = { id: string; reference: string; version: number; status: string; priority: string; payment_status: string; customer_id: number; customer_phone: string; customer_name: string; service: string; package: string; zone: string; start_at: string; end_at: string; address: { line_1: string; locality: string; city: string; postal_code: string }; price_paise: number | null; price_lines: { code: string; amount_paise: number }[]; technician: { id: string; name: string; status: string } | null; timeline?: { status: string; at: string; reason: string }[]; notes?: { text: string; at: string }[]; support?: Ticket[] };
-export type Technician = { id: string; name: string; status: string; online: boolean; skills: string[]; zones: string[]; active_jobs: number; availability?: { weekday: number; start_minute: number; end_minute: number }[]; jobs?: { booking_id: string; status: string; start_at: string }[]; notes?: { text: string; at: string }[] };
-export type Ticket = { id: string; reference: string; customer_id: number; booking_id: string | null; category: string; priority: string; subject: string; description: string; status: string; assigned_to: number | null; created_at: string; events?: { kind: string; text: string; from_status: string; to_status: string; created_at: string }[] };
-export type Escalation = { id: string; booking_id: string | null; ticket_id: string | null; category: string; priority: string; status: string; assigned_to: number | null; notes: string; resolution: string; created_at: string };
-export type Candidate = { id: string; name: string; score: number; workload: number; reasons: string[] };
-export type Page<T> = { count: number; page: number; results: T[] };
-export type Dashboard = { metrics: Record<string, number>; recent_bookings: Booking[]; upcoming_appointments: Booking[]; urgent_escalations: Escalation[]; distribution: { status: string; count: number }[]; alerts: { event: string; reference: string; created_at: string }[]; sla_warnings: { code: string; deadline_at: string; booking_id: string | null }[] };
-export type Lead = { id: string; lead_reference: string; customer_name: string; mobile_number: string; alternate_mobile: string; email: string; service_category_id: string; service_category: string; service_id: string; service: string; zone_id: string | null; problem_description: string; address: string; landmark: string; area: string; city: string; pincode: string; preferred_date: string | null; preferred_time: string | null; urgency: string; source: string; status: string; priority: string; assigned_to: number | null; assigned_to_phone: string | null; follow_up_at: string | null; internal_notes: string; converted_booking_id: string | null; created_at: string; activities?: { kind: string; detail: Record<string, unknown>; created_at: string; actor_id: number }[]; follow_ups?: { id: string; due_at: string; notes: string; assigned_to: number; completed_at: string | null }[] };
-export type LeadSummary = { total: number; new: number; follow_ups_due: number; qualified: number; converted: number; conversion_rate: number };
-export type ConversionPackage = { id: string; name: string; payment_policy: string; total_paise: number; slots: { id: string; start_at: string; remaining: number }[] };
-const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+import type {
+  OpsBooking,
+  OpsCandidate,
+  OpsConversionPackage,
+  OpsCustomerDetail,
+  OpsCustomerListItem,
+  OpsDashboard,
+  OpsDispatchAttempt,
+  OpsEscalation,
+  OpsLead,
+  OpsLeadFollowUpItem,
+  OpsLeadSummary,
+  OpsPage,
+  OpsReportsResponse,
+  OpsScheduleResponse,
+  OpsSettingsResponse,
+  OpsTechnician,
+  OpsTicket,
+} from "@nammapros/types";
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+
 let csrf = "";
-export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
-export async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  if (method !== "GET" && !csrf) { const token = await fetch(`${base}/api/v1/auth/csrf/`, { credentials: "include" }); if (!token.ok) throw new ApiError("Could not initialize session security.", token.status); csrf = (await token.json()).csrf_token; }
-  const response = await fetch(`${base}/api/v1${path}`, { method, credentials: "include", cache: "no-store", headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(method !== "GET" ? { "X-CSRFToken": csrf } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-  if (!response.ok) { const payload = await response.json().catch(() => null); throw new ApiError(payload?.error?.message ?? payload?.detail ?? "Request failed. Refresh and try again.", response.status); }
-  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string
+  ) {
+    super(message);
+  }
 }
-const q = (params: Record<string, string | number | undefined>) => { const p = new URLSearchParams(); Object.entries(params).forEach(([key, value]) => { if (value !== undefined && value !== "") p.set(key, String(value)); }); return p.toString(); };
+
+export async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  if (method !== "GET" && !csrf) {
+    const token = await fetch(`${API_BASE_URL}/api/v1/auth/csrf/`, { credentials: "include" });
+    if (!token.ok) {
+      throw new ApiError("Could not initialize session security.", token.status);
+    }
+    csrf = (await token.json()).csrf_token;
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/v1${path}`, {
+    method,
+    credentials: "include",
+    cache: "no-store",
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(method !== "GET" ? { "X-CSRFToken": csrf } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    const fieldMsg =
+      payload?.error?.fields && typeof payload.error.fields === "object"
+        ? Object.values(payload.error.fields).flat().join(" ")
+        : "";
+    const msg =
+      payload?.error?.message ??
+      payload?.detail ??
+      (fieldMsg || `Request failed (${response.status}).`);
+    throw new ApiError(msg, response.status, payload?.error?.code);
+  }
+
+  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
+
+const qs = (params: Record<string, string | number | undefined>) => {
+  const p = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== "") {
+      p.set(key, String(value));
+    }
+  });
+  return p.toString();
+};
+
+export type OpsMe = {
+  id: number;
+  phone_e164: string;
+  username: string;
+  email: string;
+  full_name: string;
+};
+
+export type OpsCatalog = {
+  categories: { id: string; slug: string; name: string }[];
+  services: {
+    id: string;
+    category: string;
+    name: string;
+    packages: { id: string; name: string }[];
+  }[];
+};
+
+export type OpsServiceArea = {
+  id: string;
+  name: string;
+  city: string;
+  state: string;
+  postal_code: string;
+};
+
+export type OpsZoneGrant = {
+  id: string;
+  user_id: number;
+  zone_id: string;
+};
+
 export const api = {
-  me: () => request<{ id: number; phone_e164: string }>("/auth/me/"),
-  otpRequest: (phone_e164: string) => request<{ challenge_id: string; development_code?: string }>("/auth/otp/request/", "POST", { phone_e164 }),
-  otpVerify: async (phone_e164: string, challenge_id: string, code: string) => { await request("/auth/otp/verify/", "POST", { phone_e164, challenge_id, code }); csrf = ""; },
-  logout: async () => { await request("/auth/logout/", "POST"); csrf = ""; },
-  dashboard: (params: Record<string, string>) => request<Dashboard>(`/operations/dashboard/?${q(params)}`),
-  leads: (params: Record<string, string | number>) => request<Page<Lead>>(`/operations/leads/?${q(params)}`),
-  leadSummary: () => request<LeadSummary>("/operations/leads/summary/"),
-  leadFollowUps: (state: string) => request<{ count: number; results: { id: string; lead_id: string; lead_reference: string; customer_name: string; due_at: string; notes: string; completed_at: string | null }[] }>(`/operations/leads/follow-ups/?${q({ state })}`),
-  lead: (id: string) => request<Lead>(`/operations/leads/${id}/`),
-  createLead: (body: unknown) => request<Lead>("/operations/leads/", "POST", body),
-  updateLead: (id: string, body: unknown) => request<Lead>(`/operations/leads/${id}/`, "PATCH", body),
-  followUp: (id: string, body: unknown) => request<Lead>(`/operations/leads/${id}/follow-ups/`, "POST", body),
-  completeFollowUp: (id: string, followUpId: string) => request<Lead>(`/operations/leads/${id}/follow-ups/${followUpId}/complete/`, "POST"),
-  conversionOptions: (id: string) => request<{ packages: ConversionPackage[]; detail?: string }>(`/operations/leads/${id}/conversion-options/`),
-  convertLead: (id: string, body: unknown) => request<Lead>(`/operations/leads/${id}/convert/`, "POST", body),
-  catalog: () => request<{ categories: { id: string; slug: string; name: string }[]; services: { id: string; category: string; name: string; packages: { id: string; name: string }[] }[] }>("/catalog/"),
-  bookings: (params: Record<string, string | number>) => request<Page<Booking>>(`/operations/bookings/?${q(params)}`),
-  booking: (id: string) => request<Booking>(`/operations/bookings/${id}/`),
-  slots: (id: string) => request<{ slots: { id: string; start_at: string; remaining: number }[] }>(`/operations/bookings/${id}/slots/`),
-  bookingAction: (id: string, action: string, body: unknown) => request(`/operations/bookings/${id}/${action}/`, "POST", body),
-  note: (id: string, text: string) => request(`/operations/bookings/${id}/notes/`, "POST", { text }),
-  dispatch: () => request<{ groups: Record<string, Booking[]>; rule: Record<string, unknown> | null }>("/operations/dispatch/"),
-  candidates: (booking_id: string) => request<{ candidates: Candidate[] }>(`/operations/dispatch/candidates/?${q({ booking_id })}`),
-  attempts: (booking_id: string) => request<{ attempts: { id: string; technician: string; status: string; mode: string; created_at: string }[] }>(`/operations/dispatch/attempts/?${q({ booking_id })}`),
-  technicians: (params: Record<string, string | number>) => request<Page<Technician>>(`/operations/technicians/?${q(params)}`),
-  technician: (id: string) => request<Technician>(`/operations/technicians/${id}/`),
-  technicianNote: (id: string, text: string) => request(`/operations/technicians/${id}/notes/`, "POST", { text }),
-  schedule: (params: Record<string, string>) => request<{ bookings: Booking[]; available_slots: { id: string; start_at: string; zone: string; package: string; remaining: number }[]; conflicts: { first: string; second: string }[] }>(`/operations/schedule/?${q(params)}`),
-  customers: (params: Record<string, string | number>) => request<Page<{ id: number; phone: string; bookings: number }>>(`/operations/customers/?${q(params)}`),
-  customer: (id: string) => request<{ id: number; phone: string; bookings: Booking[]; tickets: Ticket[] }>(`/operations/customers/${id}/`),
-  tickets: (params: Record<string, string | number>) => request<Page<Ticket>>(`/operations/support/?${q(params)}`),
-  ticket: (id: string) => request<Ticket>(`/operations/support/${id}/`),
-  createTicket: (body: unknown) => request<Ticket>("/operations/support/", "POST", body),
-  updateTicket: (id: string, body: unknown) => request<Ticket>(`/operations/support/${id}/`, "PATCH", body),
-  escalations: (params: Record<string, string | number>) => request<Page<Escalation>>(`/operations/escalations/?${q(params)}`),
-  createEscalation: (body: unknown) => request<Escalation>("/operations/escalations/", "POST", body),
-  updateEscalation: (id: string, body: unknown) => request<Escalation>(`/operations/escalations/${id}/`, "PATCH", body),
-  reports: (params: Record<string, string>) => request<{ total: number; assignment_rate: number; cancellation_rate: number; completion_rate: number; sla_breaches: number; support_tickets: number; by_date: { created_at__date: string; count: number }[]; by_service: { service__name: string; count: number }[]; by_zone: { slot__zone__name: string; count: number }[]; technician_utilization: { id: string; display_name: string; completed: number; utilization_rate: number | null }[] }>(`/operations/reports/?${q(params)}`),
-  reportCsv: (params: Record<string, string>) => `${base}/api/v1/operations/reports/?${q({ ...params, format: "csv" })}`,
-  settings: () => request<{ dispatch: { name: string; is_active: boolean; automatic_enabled: boolean; offer_timeout_minutes: number; maximum_attempts: number; travel_buffer_minutes: number; weight_workload: number; weight_availability: number } | null; sla: { code: string; duration_minutes: number; warning_minutes: number; is_active: boolean }[] }>("/operations/settings/"),
+  // Auth
+  me: () => request<OpsMe>("/auth/me/"),
+  otpRequest: (phone_e164: string) =>
+    request<{ challenge_id: string; expires_at: string; development_code?: string }>("/auth/otp/request/", "POST", {
+      phone_e164,
+    }),
+  otpVerify: async (phone_e164: string, challenge_id: string, code: string) => {
+    await request("/auth/otp/verify/", "POST", { phone_e164, challenge_id, code });
+    csrf = "";
+  },
+  passwordLogin: async (username: string, password: string) => {
+    await request("/auth/password/login/", "POST", { username, password });
+    csrf = "";
+  },
+  logout: async () => {
+    await request("/auth/logout/", "POST");
+    csrf = "";
+  },
+
+  // Reference data & zone grants
+  catalog: () => request<OpsCatalog>("/catalog/"),
+  serviceAreas: () =>
+    request<{ areas?: OpsServiceArea[]; results?: OpsServiceArea[] }>("/service-areas/").then(
+      (res) => res.areas ?? res.results ?? []
+    ),
+  zoneGrants: () => request<{ results: OpsZoneGrant[] }>("/operations/lead-zone-grants/"),
+  locationAutocomplete: (input: string) =>
+    request<{ suggestions: { id: string; description: string; main_text: string; secondary_text: string }[] }>(
+      `/location/autocomplete/?${qs({ input })}`
+    ),
+  locationGeocode: (place_id: string) =>
+    request<{
+      formatted_address: string;
+      house_flat: string;
+      street: string;
+      locality: string;
+      city: string;
+      state: string;
+      postal_code: string;
+      latitude: number | null;
+      longitude: number | null;
+    }>(`/location/geocode/?${qs({ place_id })}`),
+
+  // Dashboard
+  dashboard: (params: Record<string, string>) => request<OpsDashboard>(`/operations/dashboard/?${qs(params)}`),
+
+  // Bookings
+  bookings: (params: Record<string, string | number>) =>
+    request<OpsPage<OpsBooking>>(`/operations/bookings/?${qs(params)}`),
+  booking: (id: string) => request<OpsBooking>(`/operations/bookings/${id}/`),
+  bookingSlots: (id: string) =>
+    request<{ slots: { id: string; start_at: string; remaining: number }[] }>(`/operations/bookings/${id}/slots/`),
+  bookingAction: (id: string, action: string, body: unknown) =>
+    request(`/operations/bookings/${id}/${action}/`, "POST", body),
+  bookingNote: (id: string, text: string) => request<{ id: string }>(`/operations/bookings/${id}/notes/`, "POST", { text }),
+
+  // Dispatch
+  dispatch: () =>
+    request<{ groups: Record<string, OpsBooking[]>; rule: Record<string, unknown> | null }>("/operations/dispatch/"),
+  candidates: (booking_id: string) =>
+    request<{ candidates: OpsCandidate[]; rule?: Record<string, unknown> | null }>(
+      `/operations/dispatch/candidates/?${qs({ booking_id })}`
+    ),
+  attempts: (booking_id: string) =>
+    request<{ attempts: OpsDispatchAttempt[] }>(`/operations/dispatch/attempts/?${qs({ booking_id })}`),
+  createAttemptOffer: (booking_id: string, technician_id: string, expected_version: number) =>
+    request<{ id: string; status: string }>("/operations/dispatch/attempts/", "POST", {
+      booking_id,
+      technician_id,
+      expected_version,
+    }),
+
+  // Leads CRM
+  leads: (params: Record<string, string | number>) => request<OpsPage<OpsLead>>(`/operations/leads/?${qs(params)}`),
+  leadSummary: () => request<OpsLeadSummary>("/operations/leads/summary/"),
+  leadExportUrl: (params: Record<string, string> = {}) => `${API_BASE_URL}/api/v1/operations/leads/export/?${qs(params)}`,
+  leadFollowUps: (state: string, page = 1) =>
+    request<OpsPage<OpsLeadFollowUpItem>>(`/operations/leads/follow-ups/?${qs({ state, page })}`),
+  lead: (id: string) => request<OpsLead>(`/operations/leads/${id}/`),
+  leadActivities: (id: string) =>
+    request<{ results: { id: string; kind: string; detail: Record<string, unknown>; actor: string | null; created_at: string }[] }>(
+      `/operations/leads/${id}/activities/`
+    ),
+  createLead: (body: unknown) => request<OpsLead>("/operations/leads/", "POST", body),
+  updateLead: (id: string, body: unknown) => request<OpsLead>(`/operations/leads/${id}/`, "PATCH", body),
+  addLeadFollowUp: (id: string, body: { due_at: string; notes?: string; assigned_to?: number }) =>
+    request<OpsLead>(`/operations/leads/${id}/follow-ups/`, "POST", body),
+  completeLeadFollowUp: (id: string, followUpId: string) =>
+    request<OpsLead>(`/operations/leads/${id}/follow-ups/${followUpId}/complete/`, "POST"),
+  recordLeadContact: (id: string, body: { channel: string; outcome?: string; notes?: string }) =>
+    request<OpsLead>(`/operations/leads/${id}/record-contact/`, "POST", body),
+  scheduleLead: (id: string, body: { preferred_date: string; preferred_time?: string | null }) =>
+    request<OpsLead>(`/operations/leads/${id}/schedule/`, "POST", body),
+  sendLeadReminder: (id: string, body: { channel: "SMS" | "WHATSAPP" | "EMAIL"; note?: string }) =>
+    request(`/operations/leads/${id}/send-reminder/`, "POST", body),
+  sendLeadPaymentLink: (id: string, body: { channel: "SMS" | "WHATSAPP"; payment_scope: "FULL" | "ADVANCE"; amount_paise?: number }) =>
+    request<{ id: string; payment_status: string; payment_link_url: string; payment_delivery_status: string }>(
+      `/operations/leads/${id}/send-payment-link/`,
+      "POST",
+      body
+    ),
+  recordLeadManualPayment: (id: string, body: { amount_paise: number; method: string; reference?: string }) =>
+    request<{ id: string; payment_status: string; manual_paid_paise: number }>(
+      `/operations/leads/${id}/record-manual-payment/`,
+      "POST",
+      body
+    ),
+  conversionOptions: (id: string) =>
+    request<{ packages: OpsConversionPackage[]; detail?: string }>(`/operations/leads/${id}/conversion-options/`),
+  convertLead: (
+    id: string,
+    body: { package_id?: string; slot_id?: string; accepted_total_paise?: number; notes?: string }
+  ) => request<OpsLead>(`/operations/leads/${id}/convert/`, "POST", body),
+
+  // Technicians, Schedule, Customers
+  technicians: (params: Record<string, string | number>) =>
+    request<OpsPage<OpsTechnician>>(`/operations/technicians/?${qs(params)}`),
+  technician: (id: string) => request<OpsTechnician>(`/operations/technicians/${id}/`),
+  technicianNote: (id: string, text: string) =>
+    request<{ id: string }>(`/operations/technicians/${id}/notes/`, "POST", { text }),
+  schedule: (params: Record<string, string | number>) =>
+    request<OpsScheduleResponse>(`/operations/schedule/?${qs(params)}`),
+  customers: (params: Record<string, string | number>) =>
+    request<OpsPage<OpsCustomerListItem>>(`/operations/customers/?${qs(params)}`),
+  customer: (id: string | number) => request<OpsCustomerDetail>(`/operations/customers/${id}/`),
+
+  // Support & Escalations
+  tickets: (params: Record<string, string | number>) => request<OpsPage<OpsTicket>>(`/operations/support/?${qs(params)}`),
+  ticket: (id: string) => request<OpsTicket>(`/operations/support/${id}/`),
+  createTicket: (body: {
+    customer_id: number;
+    booking_id?: string;
+    category: string;
+    priority: string;
+    subject: string;
+    description: string;
+  }) => request<OpsTicket>("/operations/support/", "POST", body),
+  updateTicket: (id: string, body: { status?: string; assigned_to?: number; note?: string; communication?: string }) =>
+    request<OpsTicket>(`/operations/support/${id}/`, "PATCH", body),
+  escalations: (params: Record<string, string | number>) =>
+    request<OpsPage<OpsEscalation>>(`/operations/escalations/?${qs(params)}`),
+  createEscalation: (body: {
+    booking_id?: string;
+    ticket_id?: string;
+    category: string;
+    priority: string;
+    notes?: string;
+  }) => request<OpsEscalation>("/operations/escalations/", "POST", body),
+  updateEscalation: (
+    id: string,
+    body: { status?: string; assigned_to?: number; notes?: string; resolution?: string }
+  ) => request<OpsEscalation>(`/operations/escalations/${id}/`, "PATCH", body),
+
+  // Reports & Settings
+  reports: (params: Record<string, string>) => request<OpsReportsResponse>(`/operations/reports/?${qs(params)}`),
+  reportCsvUrl: (params: Record<string, string>) => `${API_BASE_URL}/api/v1/operations/reports/?${qs({ ...params, format: "csv" })}`,
+  settings: () => request<OpsSettingsResponse>("/operations/settings/"),
   saveSettings: (body: unknown) => request("/operations/settings/", "PATCH", body),
 };
