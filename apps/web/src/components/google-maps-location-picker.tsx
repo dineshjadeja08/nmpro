@@ -190,17 +190,17 @@ export function GoogleMapsLocationPicker({
   };
 
   return (
-    <div className="space-y-3 rounded-2xl border border-[#ebd0d7] bg-[#fdf8f9] p-4">
+    <div className="space-y-3 rounded-lg border border-[#E8E1DB] bg-[#FBF8F5] p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <label className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-[#800020]">
-          <MapPin className="h-4 w-4" />
+        <label className="flex items-center gap-1.5 text-xs font-bold tracking-wide text-[#1C1917]">
+          <MapPin className="h-4 w-4 text-[#800020]" />
           <span>{title}</span>
         </label>
         <button
           type="button"
           disabled={detecting}
           onClick={handleDetectGPS}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-bold text-[#800020] hover:bg-[#f6e7eb] disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-md border border-[#800020]/25 bg-white px-3 py-1.5 text-xs font-bold text-[#800020] transition hover:bg-[#F5E6EA] disabled:opacity-50"
         >
           {detecting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -218,7 +218,7 @@ export function GoogleMapsLocationPicker({
           onChange={(e) => handleSearch(e.target.value)}
           placeholder="Search area, street, landmark, or 6-digit PIN..."
           autoComplete="off"
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 pr-9 text-sm font-medium text-slate-900 outline-none focus:border-[#800020]"
+          className="w-full rounded-md border border-[#D6CEC6] bg-white px-4 py-2.5 pr-9 text-sm font-medium text-[#1C1917] outline-none placeholder:text-[#78716C] focus:border-[#800020]"
         />
         {loading && (
           <div className="absolute right-3 top-3">
@@ -234,11 +234,11 @@ export function GoogleMapsLocationPicker({
               ? "text-red-700"
               : notice.kind === "warn"
                 ? "text-amber-800"
-                : "text-emerald-800"
+                : "text-[#117A4B]"
           }`}
         >
           {notice.kind === "success" ? (
-            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+            <Check className="h-3.5 w-3.5 shrink-0 text-[#117A4B]" />
           ) : (
             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           )}
@@ -247,18 +247,18 @@ export function GoogleMapsLocationPicker({
       )}
 
       {suggestions.length > 0 && (
-        <ul className="max-h-60 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+        <ul className="max-h-60 divide-y divide-[#EFE9E2] overflow-y-auto rounded-md border border-[#E8E1DB] bg-white shadow-lg">
           {suggestions.map((s) => (
             <li key={s.id}>
               <button
                 type="button"
                 onClick={() => handleSelectSuggestion(s)}
-                className="flex w-full items-start gap-2.5 p-3 text-left text-xs transition hover:bg-[#f6e7eb]"
+                className="flex w-full items-start gap-2.5 p-3 text-left text-xs transition hover:bg-[#FAF6F2]"
               >
                 <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#800020]" />
                 <div className="min-w-0">
-                  <p className="font-bold text-slate-900">{s.main_text}</p>
-                  <p className="truncate text-[11px] text-slate-500">{s.secondary_text || s.description}</p>
+                  <p className="font-bold text-[#1C1917]">{s.main_text}</p>
+                  <p className="truncate text-[11px] text-[#57534E]">{s.secondary_text || s.description}</p>
                 </div>
               </button>
             </li>

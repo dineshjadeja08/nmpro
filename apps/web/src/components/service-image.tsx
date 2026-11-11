@@ -29,7 +29,7 @@ export function ServiceImage({
   imageClassName,
   priority,
   sizes = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw",
-  fit = "cover",
+  fit = "contain",
   zoomOnHover = true,
 }: ServiceImageProps) {
   const [failed, setFailed] = useState(false);
@@ -45,7 +45,7 @@ export function ServiceImage({
       style={{
         position: "relative",
         overflow: "hidden",
-        borderRadius: "16px",
+        borderRadius: "8px",
         ...(className ? {} : { width: "100%", height: "100%" }),
       }}
       className={className}

@@ -808,7 +808,7 @@ RAW_CATALOGUE = [
 
 
 class Command(BaseCommand):
-    help = "Seed the complete Purple Squad 47-service catalogue with full descriptions, inclusions, pricing, and advance settings."
+    help = "Seed the canonical 13 NammaPros categories and exact sub-services, deactivating any extra categories/services."
 
     def handle(self, *args, **options):
         # Ensure active zones exist for coverage & pricing
@@ -827,23 +827,190 @@ class Command(BaseCommand):
             z.save()
             zones.append(z)
 
-        total_categories = 0
-        total_services = 0
-        total_packages = 0
-        active_packages = []
+        raw_by_slug = {svc["slug"]: dict(svc) for cat in RAW_CATALOGUE for svc in cat["services"]}
 
-        cat_image_map = {
-            "cleaning": "/images/banners/water-tank-cleaning.png",
-            "home-appliances-repair": "/images/banners/ac-service.png",
-            "ac": "/images/banners/ac-service.png",
-            "water-purifier": "/images/banners/water-purifier.png",
-            "washing-machine": "/images/banners/washing-machine.png",
-            "refrigerator": "/images/banners/refrigerator.png",
-            "home-maintenance": "/images/banners/sofa-repair.png",
-        }
+        def from_raw(slug, **overrides):
+            item = dict(raw_by_slug[slug])
+            item.update(overrides)
+            return item
 
+        canonical_catalogue = [
+            {
+                "category_slug": "ac",
+                "category_name": "AC",
+                "category_desc": "General AC service, foam jet, chemical wash, repair, gas refill & installation.",
+                "banner_img": "/images/banners/ac-service.png",
+                "services": [
+                    from_raw("general-ac-service", name="General AC Service", is_active=True),
+                    from_raw("foam-jet-ac-service", name="Foam Jet AC Service", is_active=True, is_popular=True),
+                    from_raw("ac-chemical-wash", name="AC Chemical Wash", is_active=True),
+                    from_raw("ac-service", name="AC Inspection", is_active=True),
+                    {
+                        "slug": "ac-repair",
+                        "name": "AC Repair",
+                        "is_active": True,
+                        "current_price": 249.00,
+                        "duration": 45,
+                        "short_description": "Inspection and repair estimate for cooling, PCB, compressor, fan motor, or leakage issues.",
+                        "full_description": "Doorstep AC repair inspection. Our technician identifies the fault, shares the repair & spare-part quote upfront, and starts work only after your approval.",
+                        "inclusions": ["AC fault inspection", "Repair cost & parts estimate before work", "Final cooling and operational check"],
+                        "exclusions": ["Spare parts and gas charges as approved", "Civil or core cutting work"],
+                        "advance_paise": 4900,
+                        "pricing_model": "INSPECTION_BASED",
+                    },
+                    from_raw("ac-repair-gas-refill", name="AC Gas Refill", is_active=True),
+                    from_raw("ac-installation", name="AC Installation", is_active=True),
+                    from_raw("ac-uninstallation", name="AC Uninstallation", is_active=True),
+                    from_raw("ac-uninstallation-installation", name="AC Uninstallation & Installation", is_active=True),
+                    {
+                        "slug": "ac-installation-with-chemical-wash",
+                        "name": "AC Installation with Chemical Wash",
+                        "is_active": True,
+                        "current_price": None,
+                        "duration": 180,
+                        "short_description": "Full chemical wash of indoor/outdoor components paired with split or window AC installation.",
+                        "full_description": "Combined service that deeply cleans coils, blower, and drain tray using a safe chemical wash before completing standard AC mounting and testing.",
+                        "inclusions": ["Indoor chemical wash", "Standard split/window AC mounting", "Drainage check & cooling test"],
+                        "exclusions": ["Extra copper pipe, outdoor stand, drain pipe, electrical wiring, and core cutting"],
+                        "advance_paise": 0,
+                        "pricing_model": "INSPECTION_BASED",
+                    },
+                ],
+            },
+            {
+                "category_slug": "washing-machine",
+                "category_name": "Washing Machine",
+                "category_desc": "Washing machine repair, installation and uninstallation.",
+                "banner_img": "/images/banners/washing-machine.png",
+                "services": [
+                    from_raw("washing-machine-repair-service", name="Washing Machine Repair Inspection", is_active=True, is_popular=True),
+                    from_raw("washing-machine-installation", name="Washing Machine Installation", is_active=True),
+                    from_raw("washing-machine-uninstallation", name="Washing Machine Uninstallation", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "refrigerator",
+                "category_name": "Refrigerator",
+                "category_desc": "Refrigerator inspection, installation and uninstallation.",
+                "banner_img": "/images/banners/refrigerator.png",
+                "services": [
+                    from_raw("refrigerator-repair-services", name="Refrigerator Repair Inspection", is_active=True),
+                    from_raw("refrigerator-installation-uninstallation", name="Refrigerator Installation / Uninstallation", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "tv",
+                "category_name": "TV",
+                "category_desc": "TV repair & services and TV wall mount installation by screen size.",
+                "banner_img": "/images/banners/tv-repair.png",
+                "services": [
+                    from_raw("tv-repair-services", name="TV Repair & Services", is_active=True, is_popular=True),
+                    from_raw("tv-wall-mount-up-to-26-inch", name="TV Wall Mount - Up to 26 inch", is_active=True),
+                    from_raw("tv-wall-mount-32-to-43-inch", name="TV Wall Mount - 32 to 43 inch", is_active=True),
+                    from_raw("tv-wall-mount-46-to-55-inch", name="TV Wall Mount - 46 to 55 inch", advance_paise=10000, is_active=True),
+                    from_raw("tv-wall-mount-56-to-65-inch", name="TV Wall Mount - 56 to 65 inch", advance_paise=10000, is_active=True),
+                    from_raw("tv-wall-mount-over-75-inch", name="TV Wall Mount - Over 75 inch", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "geyser",
+                "category_name": "Geyser",
+                "category_desc": "Geyser repair, heating check, and installation.",
+                "banner_img": "/images/banners/geyser.png",
+                "services": [
+                    from_raw("geyser-repair-services", name="Geyser Repair & Services", is_active=True),
+                    from_raw("geyser-installation", name="Geyser Installation", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "water-purifier",
+                "category_name": "Water Purifier",
+                "category_desc": "RO/UV water purifier repair, filter service, and maintenance.",
+                "banner_img": "/images/banners/water-purifier.png",
+                "services": [
+                    from_raw("water-purifier-repair-services", name="Water Purifier Repair & Services", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "microwave-oven",
+                "category_name": "Microwave Oven",
+                "category_desc": "Microwave oven inspection, heating, and control repair.",
+                "banner_img": "/images/banners/microwave.png",
+                "services": [
+                    from_raw("microwave-oven-repair-services", name="Microwave Oven Repair & Services", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "dishwasher",
+                "category_name": "Dishwasher",
+                "category_desc": "Dishwasher inspection, leakage, drain, and heating service.",
+                "banner_img": "/images/banners/dishwasher.png",
+                "services": [
+                    from_raw("dishwasher-repair-service", name="Dishwasher Repair & Service", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "cctv",
+                "category_name": "CCTV",
+                "category_desc": "CCTV camera & DVR/NVR repair and installation.",
+                "banner_img": "/images/banners/cctv.png",
+                "services": [
+                    from_raw("cctv-cameras-repair-installation", name="CCTV Repair and Installation", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "chimney",
+                "category_name": "Chimney",
+                "category_desc": "Chimney cleaning, deep cleaning & installation for wall-mounted or island chimneys.",
+                "banner_img": "/images/services/chimney.png",
+                "services": [
+                    from_raw("chimney-cleaning-services", name="Chimney Cleaning", is_active=True),
+                    from_raw("deep-cleaning-wall-mount-chimney", name="Deep Cleaning - Wall-mount Chimney", is_active=True),
+                    from_raw("deep-cleaning-island-chimney", name="Deep Cleaning - Island Chimney", is_active=True),
+                    from_raw("chimney-installation-wall-mount-chimney", name="Chimney Installation - Wall-mount Chimney", is_active=True),
+                    from_raw("chimney-installation-island-chimney", name="Chimney Installation - Island Chimney", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "water-tank-cleaning",
+                "category_name": "Water Tank Cleaning",
+                "category_desc": "Overhead water tank, concrete tank, and underground sump mechanized cleaning.",
+                "banner_img": "/images/banners/water-tank-cleaning.png",
+                "services": [
+                    from_raw("overhead-water-tank-cleaning-up-to-1000-litres", advance_paise=10000, is_active=True, is_popular=True),
+                    from_raw("overhead-water-tank-cleaning-1000-to-3000-litres", advance_paise=10000, is_active=True),
+                    from_raw("overhead-water-tank-cleaning-3000-to-6000-litres", is_active=True),
+                    from_raw("overhead-water-tank-cleaning-6000-to-10000-litres", is_active=True),
+                    from_raw("overhead-concrete-water-tank-cleaning-up-to-1000-litres", is_active=True),
+                    from_raw("overhead-concrete-water-tank-cleaning-1000-to-3000-litres", is_active=True),
+                    from_raw("underground-sump-cleaning-up-to-5000-litres", advance_paise=10000, is_active=True),
+                    from_raw("underground-sump-cleaning-5000-to-8000-litres", advance_paise=10000, is_active=True),
+                    from_raw("underground-sump-cleaning-8000-to-12000-litres", is_active=True),
+                    from_raw("underground-sump-cleaning-12000-to-20000-litres", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "mosquito-net",
+                "category_name": "Mosquito Net",
+                "category_desc": "Mosquito net inspection for measurement, repair, or replacement.",
+                "banner_img": "/images/banners/mosquito-net.png",
+                "services": [
+                    from_raw("mosquito-net-inspection-charge", name="Mosquito Net Inspection Charge", is_active=True),
+                ],
+            },
+            {
+                "category_slug": "sofa",
+                "category_name": "Sofa",
+                "category_desc": "Sofa repair inspection and upholstery/frame estimate.",
+                "banner_img": "/images/banners/sofa-repair.png",
+                "services": [
+                    from_raw("sofa-repair-inspection-charge", name="Sofa Repair", is_active=True),
+                ],
+            },
+        ]
+
+        import re
         local_photo_keywords = [
-            (["foam jet", "chemical wash", "gas refill", "gas refil", "ac inspection", "ac uninstallation", "ac installation", "ac service", "ac"], "/images/banners/ac-service.png"),
             (["dishwasher"], "/images/banners/dishwasher.png"),
             (["washing", "washer"], "/images/banners/washing-machine.png"),
             (["refrigerator", "fridge"], "/images/banners/refrigerator.png"),
@@ -855,7 +1022,8 @@ class Command(BaseCommand):
             (["sofa"], "/images/banners/sofa-repair.png"),
             (["cctv", "security camera"], "/images/banners/cctv.png"),
             (["wall mount", "tv repair", "television"], "/images/banners/tv-repair.png"),
-            (["chimney"], "/images/banners/washing-machine.png"),
+            (["chimney"], "/images/services/chimney.png"),
+            (["foam jet", "chemical wash", "gas refill", "gas refil", "ac inspection", "ac uninstallation", "ac installation", "ac service", "ac repair"], "/images/banners/ac-service.png"),
         ]
 
         def resolve_local_photo(name):
@@ -863,24 +1031,45 @@ class Command(BaseCommand):
             for keys, path in local_photo_keywords:
                 if any(k in norm for k in keys):
                     return path
+            if re.search(r"\b(ac|tv)\b", norm):
+                return "/images/banners/tv-repair.png" if re.search(r"\btv\b", norm) else "/images/banners/ac-service.png"
             return "/images/banners/ac-service.png"
 
-        for cat_order, cat_data in enumerate(RAW_CATALOGUE):
-            cat_img = cat_image_map.get(cat_data["category_slug"], "")
+        canonical_category_slugs = [c["category_slug"] for c in canonical_catalogue]
+        canonical_service_slugs = []
+        total_categories = 0
+        total_services = 0
+        total_packages = 0
+        active_packages = []
+
+        # Clear old is_popular flags outside canonical set
+        Service.objects.update(is_popular=False)
+
+        for cat_order, cat_data in enumerate(canonical_catalogue, start=1):
+            c_slug = cat_data["category_slug"]
             category, _ = Category.objects.update_or_create(
-                slug=cat_data["category_slug"],
+                slug=c_slug,
                 defaults={
                     "name": cat_data["category_name"],
                     "description": cat_data["category_desc"],
                     "sort_order": cat_order,
                     "is_active": True,
-                    "image_url": cat_img,
+                    "icon_url": f"/images/category-icons/{c_slug}.png",
+                    "image_url": cat_data.get("banner_img", ""),
                 },
             )
             total_categories += 1
 
-            for s_order, s_data in enumerate(cat_data["services"]):
-                selling_paise = int(round(s_data["current_price"] * 100))
+            for s_order, s_data in enumerate(cat_data["services"], start=1):
+                canonical_service_slugs.append(s_data["slug"])
+                curr_price = s_data.get("current_price")
+                base_price = s_data.get("base_price")
+                selling_paise = int(round(curr_price * 100)) if curr_price is not None else None
+                original_paise = (
+                    int(round(base_price * 100))
+                    if base_price is not None and selling_paise is not None and base_price > curr_price
+                    else None
+                )
                 s_photo = resolve_local_photo(s_data["name"])
                 service, _ = Service.objects.update_or_create(
                     slug=s_data["slug"],
@@ -892,6 +1081,10 @@ class Command(BaseCommand):
                         "starting_price_paise": selling_paise,
                         "sort_order": s_order,
                         "is_active": s_data["is_active"],
+                        "is_popular": bool(s_data.get("is_popular", False)),
+                        "important_notes": s_data.get("notes", ""),
+                        "inclusions": s_data.get("inclusions", []),
+                        "exclusions": s_data.get("exclusions", []),
                         "cover_image_url": s_photo,
                         "landing_thumbnail_url": s_photo,
                         "list_image_url": s_photo,
@@ -901,13 +1094,11 @@ class Command(BaseCommand):
                 )
                 total_services += 1
 
-                # Link service coverage across zones
                 for z in zones:
                     cov, _ = ServiceCoverage.objects.get_or_create(service=service, zone=z)
                     cov.is_active = s_data["is_active"]
                     cov.save()
 
-                # Create package
                 pkg, _ = ServicePackage.objects.update_or_create(
                     service=service,
                     name=s_data["name"],
@@ -918,6 +1109,7 @@ class Command(BaseCommand):
                         "description": s_data["short_description"],
                         "inclusions": s_data["inclusions"],
                         "exclusions": s_data["exclusions"],
+                        "original_price_paise": original_paise,
                         "is_active": s_data["is_active"],
                     },
                 )
@@ -925,25 +1117,29 @@ class Command(BaseCommand):
                 if s_data["is_active"]:
                     active_packages.append(pkg)
 
-                # Pricing rule for each zone
-                adv_paise = s_data.get("advance_paise", 0)
-                policy = "ADVANCE" if adv_paise > 0 else "PREPAID"
-                adv_type = "FIXED" if adv_paise > 0 else "NONE"
-                is_inspection = (pkg.pricing_model == "INSPECTION_BASED")
-                base_paise_val = 0 if is_inspection else selling_paise
-                insp_paise_val = selling_paise if is_inspection else 0
+                if selling_paise is not None and selling_paise > 0:
+                    adv_paise = s_data.get("advance_paise", 0)
+                    policy = "ADVANCE" if adv_paise > 0 else "PREPAID"
+                    adv_type = "FIXED" if adv_paise > 0 else "NONE"
+                    is_inspection = (pkg.pricing_model == "INSPECTION_BASED")
+                    base_paise_val = 0 if is_inspection else selling_paise
+                    insp_paise_val = selling_paise if is_inspection else 0
 
-                for z in zones:
-                    p_rule = PricingRule.objects.filter(package=pkg, zone=z).order_by("-version").first()
-                    if not p_rule:
-                        p_rule = PricingRule(package=pkg, zone=z, version=1)
-                    p_rule.base_paise = base_paise_val
-                    p_rule.inspection_paise = insp_paise_val
-                    p_rule.payment_policy = policy
-                    p_rule.advance_type = adv_type
-                    p_rule.advance_amount_paise = adv_paise
-                    p_rule.is_active = s_data["is_active"]
-                    p_rule.save()
+                    for z in zones:
+                        p_rule = PricingRule.objects.filter(package=pkg, zone=z).order_by("-version").first()
+                        if not p_rule:
+                            p_rule = PricingRule(package=pkg, zone=z, version=1)
+                        p_rule.base_paise = base_paise_val
+                        p_rule.inspection_paise = insp_paise_val
+                        p_rule.payment_policy = policy
+                        p_rule.advance_type = adv_type
+                        p_rule.advance_amount_paise = adv_paise
+                        p_rule.is_active = s_data["is_active"]
+                        p_rule.save()
+
+        # Deactivate any legacy/duplicate categories and services outside the canonical set
+        deactivated_cats = Category.objects.exclude(slug__in=canonical_category_slugs).update(is_active=False)
+        deactivated_svcs = Service.objects.exclude(slug__in=canonical_service_slugs).update(is_active=False)
 
         # Seed appointment slots for active packages across the next 7 days
         now = timezone.now()
@@ -965,11 +1161,13 @@ class Command(BaseCommand):
                         if created:
                             slot_count += 1
 
+        from django.core.cache import cache
+        cache.clear()
+
         self.stdout.write(self.style.SUCCESS(
-            f"Successfully populated catalogue!\n"
-            f"- Categories: {total_categories}\n"
-            f"- Total Services: {total_services} ({len(active_packages)} Active, {total_services - len(active_packages)} Inactive)\n"
-            f"- Total Packages: {total_packages}\n"
-            f"- Generated appointment slots: {slot_count}\n"
-            f"All records are fully linked and editable in the Admin panel."
+            f"Successfully populated canonical NammaPros catalogue!\n"
+            f"- Categories active: {total_categories} (deactivated {deactivated_cats} extra)\n"
+            f"- Sub-services active: {total_services} (deactivated {deactivated_svcs} extra)\n"
+            f"- Packages: {total_packages}\n"
+            f"- Generated appointment slots: {slot_count}"
         ))

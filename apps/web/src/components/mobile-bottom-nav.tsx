@@ -32,7 +32,7 @@ export function MobileBottomNav() {
               }`}
             >
               <span
-                className={`inline-flex h-7 w-11 items-center justify-center rounded-full ${
+                className={`inline-flex h-7 w-11 items-center justify-center rounded-md ${
                   active ? "bg-[#f5ebe8]" : ""
                 }`}
               >

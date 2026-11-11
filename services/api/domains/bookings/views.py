@@ -82,6 +82,7 @@ class HoldDetailView(APIView):
 
 class QuoteInput(serializers.Serializer):
     hold_id = serializers.UUIDField()
+    items = serializers.ListField(child=serializers.DictField(), required=False)
 
 
 class QuoteView(APIView):
@@ -90,7 +91,11 @@ class QuoteView(APIView):
     def post(self, request):
         data = QuoteInput(data=request.data)
         data.is_valid(raise_exception=True)
-        quote = create_quote(request.user, data.validated_data["hold_id"])
+        quote = create_quote(
+            request.user,
+            data.validated_data["hold_id"],
+            cart_items=data.validated_data.get("items"),
+        )
         return Response(serialize_quote(quote), status=201)
 
 

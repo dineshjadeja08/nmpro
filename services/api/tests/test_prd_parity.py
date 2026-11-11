@@ -390,3 +390,97 @@ def test_unified_services_categories_banners_and_gallery():
     assert admin_client.delete(f"/api/v1/admin/services/{sub_svc['id']}/").status_code == 204
     assert admin_client.delete(f"/api/v1/admin/categories/{ac_cat['id']}/").status_code == 204
     cache.clear()
+
+
+@pytest.mark.django_db
+def test_multi_service_cart_checkout_creates_single_unified_booking():
+    city = City.objects.create(name="Chennai", slug="chennai-multi", is_active=True)
+    zone = Zone.objects.create(
+        city=city, name="Anna Nagar", postal_code="600040", is_active=True, services_configured=False
+    )
+    cat = Category.objects.create(slug="multi-care", name="Home Care", is_active=True)
+    svc1 = Service.objects.create(
+        category=cat, slug="ac-foam", name="AC Foam Service", summary="AC foam cleaning", is_active=True
+    )
+    svc2 = Service.objects.create(
+        category=cat, slug="bath-clean", name="Bathroom Deep Clean", summary="Full descaling", is_active=True
+    )
+    pkg1 = ServicePackage.objects.create(
+        service=svc1, name="Foam-Jet", pricing_model="FIXED_PRICE", duration_minutes=60, skill_code="AC", is_active=True
+    )
+    pkg2 = ServicePackage.objects.create(
+        service=svc2, name="Full Deep Clean", pricing_model="FIXED_PRICE", duration_minutes=60, skill_code="CLEANING", is_active=True
+    )
+    PricingRule.objects.create(package=pkg1, zone=zone, base_paise=64900, payment_policy="PAY_AT_VISIT", is_active=True)
+    PricingRule.objects.create(package=pkg2, zone=zone, base_paise=49900, payment_policy="PAY_AT_VISIT", is_active=True)
+
+    customer = get_user_model().objects.create_user(username="multi-cust", phone_e164="+919876500088")
+    address = Address.objects.create(
+        user=customer, zone=zone, line_1="14 2nd Ave", house_flat="14", street="2nd Ave",
+        locality="Anna Nagar", city="Chennai", state="Tamil Nadu", postal_code="600040",
+    )
+    start = timezone.now() + timedelta(days=2)
+    slot = AppointmentSlot.objects.create(
+        zone=zone, package=pkg1, start_at=start, end_at=start + timedelta(hours=1), capacity=2, is_active=True
+    )
+
+    cust_client = APIClient()
+    cust_client.force_authenticate(user=customer)
+
+    add1 = cust_client.put(f"/api/v1/cart/items/{svc1.id}/", {"package_id": str(pkg1.id), "quantity": 2}, format="json")
+    assert add1.status_code == 200, add1.content
+    add2 = cust_client.put(f"/api/v1/cart/items/{svc2.id}/", {"package_id": str(pkg2.id), "quantity": 1}, format="json")
+    assert add2.status_code == 200, add2.content
+
+    cart_res = cust_client.get("/api/v1/cart/")
+    assert cart_res.status_code == 200
+    assert len(cart_res.json()["items"]) == 2
+    assert sum(i["quantity"] for i in cart_res.json()["items"]) == 3
+
+    checkout = cust_client.post("/api/v1/cart/checkout/", {"address_id": str(address.id), "slot_id": str(slot.id)}, format="json")
+    assert checkout.status_code == 201, checkout.content
+    data = checkout.json()
+    assert len(data["items"]) == 2
+    assert data["price"]["total_paise"] == 2 * 64900 + 49900
+    assert Booking.objects.filter(user=customer).count() == 1
+    assert cust_client.get("/api/v1/cart/").json()["items"] == []
+
+
+@pytest.mark.django_db
+def test_category_icon_and_service_brands_endpoints():
+    from django.core.cache import cache
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    cache.clear()
+    admin = _make_admin("+919999990007")
+    admin_client = APIClient()
+    admin_client.force_authenticate(user=admin)
+
+    cat = admin_client.post("/api/v1/admin/categories/", {"slug": "cooling-care", "name": "Cooling Care"}, format="json").json()
+    svg_bytes = b'<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"></svg>'
+    icon_up = admin_client.post(f"/api/v1/admin/categories/{cat['id']}/images/", {
+        "slot": "icon", "file": SimpleUploadedFile("ac-icon.svg", svg_bytes, content_type="image/svg+xml"),
+    })
+    assert icon_up.status_code == 200 and "/media/icon/" in icon_up.json()["url"]
+
+    svc = admin_client.post("/api/v1/admin/services/", {
+        "category_id": cat["id"],
+        "slug": "split-ac-care",
+        "name": "Split AC Care",
+        "summary": "Cooling check & wash",
+        "brands": [{"name": "LG", "logo_url": ""}, {"name": "Daikin", "logo_url": "https://cdn.example.com/daikin.png"}],
+    }, format="json")
+    assert svc.status_code == 201, svc.content
+    assert [b["name"] for b in svc.json()["brands"]] == ["LG", "Daikin"]
+
+    pub_cat = APIClient().get("/api/v1/service-categories/cooling-care/")
+    assert pub_cat.status_code == 200
+    assert "/media/icon/" in pub_cat.json()["category"]["icon_url"]
+    assert [b["name"] for b in pub_cat.json()["services"][0]["brands"]] == ["LG", "Daikin"]
+
+    media_res = APIClient().get(f"/api/v1/catalog/categories/{cat['id']}/media/icon/")
+    assert media_res.status_code == 200
+    media_res.close()
+
+    assert admin_client.delete(f"/api/v1/admin/categories/{cat['id']}/images/?slot=icon").status_code == 200
+    cache.clear()

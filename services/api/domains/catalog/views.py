@@ -26,6 +26,7 @@ def serialize_category(category, sub_service_count=None):
         "description": category.description,
         "short_description": category.description,
         "image_url": category.image_display,
+        "icon_url": category.icon_display,
         "banner_image": category.banner_image_display,
         "banner_title": category.banner_title,
         "banner_subtitle": category.banner_subtitle,
@@ -106,6 +107,7 @@ def serialize_service(service):
             "training_fee_paise": service.training_fee_paise, "important_notes": service.important_notes,
             "features": service.features, "inclusions": service.inclusions, "exclusions": service.exclusions,
             "faqs": service.faq_items, "process_steps": service.process_steps or [], "spare_parts_rates": service.spare_parts_rates or [],
+            "brands": service.brands or [],
             "seo_title": service.seo_title, "seo_description": service.seo_description,
             "sort_order": service.sort_order,
             "banner_title": service.banner_title, "banner_subtitle": service.banner_subtitle,
@@ -200,7 +202,9 @@ class CategoryDetailPublicView(APIView):
 
     def get(self, request, slug):
         category = get_object_or_404(Category, slug=slug, is_active=True)
-        services = Service.objects.select_related("category").prefetch_related("packages", "images").filter(
+        services = Service.objects.select_related("category").prefetch_related(
+            "packages__prices", "images", "reviews"
+        ).filter(
             category=category, is_active=True
         ).order_by("sort_order", "name")
         return Response({
@@ -251,6 +255,10 @@ class CategoryMediaView(APIView):
             if category.image_url:
                 return redirect(category.image_url)
             field = category.image
+        elif slot == "icon":
+            if category.icon_url:
+                return redirect(category.icon_url)
+            field = category.icon
         elif slot == "banner":
             if category.banner_image_url:
                 return redirect(category.banner_image_url)

@@ -113,8 +113,14 @@ class CartItemView(APIView):
             package = get_object_or_404(ServicePackage, id=request.data["package_id"], service=service, is_active=True)
         else:
             package = service.packages.filter(is_active=True).first()
+        if not package:
+            raise serializers.ValidationError("No active package configured for this service.")
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        CartItem.objects.update_or_create(cart=cart, service=service, defaults={"package": package, "quantity": quantity})
+        CartItem.objects.update_or_create(
+            cart=cart,
+            package=package,
+            defaults={"service": service, "quantity": quantity},
+        )
         return Response(_serialize_cart(cart))
 
     def post(self, request, service_id):
@@ -122,7 +128,12 @@ class CartItemView(APIView):
 
     def delete(self, request, service_id):
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        cart.items.filter(service_id=service_id).delete()
+        package_id = request.query_params.get("package_id") or (request.data.get("package_id") if isinstance(request.data, dict) else None)
+        if package_id:
+            cart.items.filter(package_id=package_id).delete()
+        else:
+            cart.items.filter(service_id=service_id).delete()
+            cart.items.filter(package_id=service_id).delete()
         return Response(_serialize_cart(cart))
 
 
@@ -139,17 +150,23 @@ class CartCheckoutView(APIView):
         if not terms_accepted:
             raise serializers.ValidationError({"terms_accepted": "Accept terms to checkout."})
         cart, _ = Cart.objects.get_or_create(user=request.user)
-        items = list(cart.items.select_related("service", "package"))
+        items = list(cart.items.select_related("service", "package").order_by("created_at"))
         if not items:
             raise serializers.ValidationError("Your cart is empty.")
         primary = items[0]
         package = primary.package or primary.service.packages.filter(is_active=True).first()
         if not package:
             raise serializers.ValidationError("No active package configured for the selected service.")
+        resolved_items = []
+        for item in items:
+            item_pkg = item.package or item.service.packages.filter(is_active=True).first()
+            if not item_pkg:
+                raise serializers.ValidationError(f"No active package configured for {item.service.name}.")
+            resolved_items.append({"package_id": str(item_pkg.id), "quantity": item.quantity})
         address = get_object_or_404(Address, id=address_id, user=request.user, archived_at__isnull=True)
         key = request.headers.get("Idempotency-Key") or f"cart-{cart.id}-{uuid4().hex[:12]}"
         hold = create_hold(request.user, package, address, slot_id)
-        quote = create_quote(request.user, hold.id)
+        quote = create_quote(request.user, hold.id, cart_items=resolved_items)
         booking, _ = confirm_booking(request.user, hold.id, quote.id, key, quote.total_paise)
         if request.data.get("problem_description"):
             booking.problem_description = str(request.data["problem_description"])[:2000]
@@ -157,5 +174,5 @@ class CartCheckoutView(APIView):
         cart.items.all().delete()
         booking = Booking.objects.select_related(
             "service", "package", "address", "slot", "price_snapshot", "invoice", "payment_order"
-        ).prefetch_related("events").get(id=booking.id)
+        ).prefetch_related("events", "items__package__service").get(id=booking.id)
         return Response(serialize_booking(booking), status=201)

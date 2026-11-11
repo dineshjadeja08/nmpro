@@ -7,10 +7,13 @@ import { Header } from "@/components/header";
 import { LocationProvider } from "@/components/location-provider";
 import { ProblemSearch } from "@/components/problem-search";
 import { ServiceCard } from "@/components/service-card";
+import { ServiceDetailModal } from "@/components/service-detail-modal";
 import { ServiceDetailView } from "@/components/service-detail-view";
 import { SlotFirstCheckout } from "@/components/slot-first-checkout";
 import { BookingShell } from "@/features/booking/booking-shell";
 import { bookingApi } from "@/lib/booking-api";
+import { api, getCatalog } from "@/lib/catalog";
+import { pickPopularServices } from "@/lib/services";
 
 const push = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({
@@ -157,11 +160,31 @@ vi.mock("@/lib/booking-api", () => ({
       },
     }),
     saveNotificationPreferences: vi.fn().mockResolvedValue({ whatsapp_opt_in: true, sms_opt_in: true, email_opt_in: true }),
+    serviceReviews: vi.fn().mockResolvedValue({
+      average_rating: 4.8,
+      review_count: 1,
+      results: [
+        {
+          id: "rev-1",
+          rating: 5,
+          comment: "Super clean foam wash.",
+          customer_name: "Anitha",
+          area: "Anna Nagar",
+          technician_name: "Suresh K",
+          created_at: "2030-01-01T10:00:00Z",
+        },
+      ],
+    }),
+    putCartItem: vi.fn().mockResolvedValue({ id: "cart-1", items: [] }),
   },
 }));
 
 vi.mock("@/lib/catalog", () => ({
-  getCatalog: async () => ({
+  api: {
+    categoryDetail: vi.fn(),
+    service: vi.fn(),
+  },
+  getCatalog: vi.fn(async () => ({
     data: {
       categories: [{ id: "c1", slug: "ac", name: "AC", description: "Cooling & installation" }],
       services: [service],
@@ -182,7 +205,7 @@ vi.mock("@/lib/catalog", () => ({
       demo: true,
     },
     error: null,
-  }),
+  })),
 }));
 
 const service: Service = {
@@ -387,5 +410,224 @@ describe("customer experience", () => {
     expect(bookingApi.paymentOrder).toHaveBeenCalledWith("b-adv", "order-b-adv");
     expect(bookingApi.verifyPayment).toHaveBeenCalledWith("b-adv", "order_adv_1", "pay_adv_1", "sig_adv_1");
     delete (window as unknown as { Razorpay?: unknown }).Razorpay;
+  });
+
+  it("adds multiple services to cart and quotes them together in one booking", async () => {
+    window.localStorage.clear();
+    vi.mocked(bookingApi.quote).mockClear();
+    vi.mocked(bookingApi.quote).mockResolvedValueOnce({
+      id: "q-multi",
+      hold_id: "h1",
+      expires_at: "2030-01-01T09:00:00Z",
+      currency: "INR",
+      pricing_policy_id: "p1",
+      pricing_version: 1,
+      payment_policy: "PAY_AT_VISIT",
+      advance_paise: 0,
+      remaining_balance_paise: 114800,
+      total_paise: 114800,
+      lines: [
+        { code: "ITEM_0", name: "AC Service & Repair · Inspection", amount_paise: 64900, quantity: 1 },
+        { code: "ITEM_1", name: "Bathroom Deep Clean · Deep Clean", amount_paise: 49900, quantity: 1 },
+      ],
+    });
+    vi.mocked(bookingApi.confirm).mockResolvedValueOnce({
+      id: "b-multi",
+      reference: "NPBK-202604-9002",
+      status: "CONFIRMED",
+      payment_status: "PENDING",
+      version: 1,
+      package_id: "p1",
+      address_id: "a1",
+      can_cancel: true,
+      can_reschedule: true,
+      service: "AC Service & Repair",
+      package: "Inspection",
+      items: [
+        { service: "AC Service & Repair", package: "Inspection", package_id: "p1", quantity: 1 },
+        { service: "Bathroom Deep Clean", package: "Deep Clean", package_id: "p2", quantity: 1 },
+      ],
+      address: { label: "Home", line_1: "12 North Street", locality: "Mylapore", city: "Chennai", postal_code: "600004" },
+      slot: { start_at: "2030-01-01T04:30:00Z", end_at: "2030-01-01T05:30:00Z" },
+      price: {
+        lines: [
+          { code: "ITEM_0", amount_paise: 64900 },
+          { code: "ITEM_1", amount_paise: 49900 },
+        ],
+        total_paise: 114800,
+        currency: "INR",
+      },
+      events: [],
+    });
+
+    const plumbingService: Service = {
+      id: "s2",
+      category: "plumbing",
+      slug: "bathroom-deep-clean",
+      name: "Bathroom Deep Clean",
+      summary: "Complete bathroom descaling and scrubbing.",
+      starting_price_paise: 49900,
+      is_active: true,
+      packages: [
+        {
+          id: "p2",
+          name: "Deep Clean",
+          pricing_model: "FIXED_PRICE",
+          description: "Tiles, taps, and floor.",
+          duration_minutes: 60,
+          starting_price_paise: 49900,
+          inclusions: ["Descaling"],
+          exclusions: [],
+          is_most_booked: true,
+        },
+      ],
+    };
+
+    render(
+      <LocationProvider>
+        <BookingCartProvider>
+          <ServiceCard service={service} />
+          <ServiceCard service={plumbingService} />
+          <BookingCartDrawer />
+        </BookingCartProvider>
+      </LocationProvider>
+    );
+
+    const addButtons = screen.getAllByRole("button", { name: /^Add to cart$/i });
+    fireEvent.click(addButtons[0]);
+    fireEvent.click(addButtons[1]);
+
+    expect(await screen.findByText(/2 services in cart · ₹1,148/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /View Cart/i }));
+    expect(await screen.findByText(/Selected services \(2\)/)).toBeTruthy();
+
+    fireEvent.click(await screen.findByRole("button", { name: /10:00/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to address" }));
+    fireEvent.click(await screen.findByRole("button", { name: /12 North Street/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to review" }));
+
+    await waitFor(() => {
+      expect(bookingApi.quote).toHaveBeenCalledWith("h1", [
+        { package_id: "p1", quantity: 1 },
+        { package_id: "p2", quantity: 1 },
+      ]);
+    });
+    fireEvent.click(await screen.findByRole("button", { name: /Confirm booking/i }));
+    expect(await screen.findByText("You’re booked!")).toBeTruthy();
+    expect(await screen.findByText(/NPBK-202604-9002/)).toBeTruthy();
+  });
+
+  it("caps homepage popular services at 4 and renders full category icon grid", async () => {
+    const manyServices: Service[] = Array.from({ length: 6 }).map((_, idx) => ({
+      ...service,
+      id: `svc-${idx + 1}`,
+      slug: `ac-sub-${idx + 1}`,
+      name: `Popular Sub ${idx + 1}`,
+      is_popular: idx < 5,
+      sort_order: idx,
+    }));
+    expect(pickPopularServices(manyServices, 4)).toHaveLength(4);
+
+    vi.mocked(getCatalog).mockResolvedValueOnce({
+      data: {
+        categories: [
+          { id: "c1", slug: "ac", name: "AC", description: "Cooling", sort_order: 1 },
+          { id: "c2", slug: "tv", name: "TV", description: "TV repair", sort_order: 2 },
+          { id: "c3", slug: "fan", name: "Fan", description: "Legacy", sort_order: 3 },
+        ],
+        services: manyServices,
+        reviews: [],
+        banners: [],
+        demo: true,
+      },
+      error: null,
+    });
+
+    const { default: Home } = await import("@/app/page");
+    render(await Home());
+
+    expect(screen.getByText("AC")).toBeTruthy();
+    expect(screen.getByText("TV")).toBeTruthy();
+    expect(screen.queryByText("Fan")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Popular services" })).toBeTruthy();
+    expect(screen.getByText("Popular Sub 1")).toBeTruthy();
+    expect(screen.getByText("Popular Sub 4")).toBeTruthy();
+    expect(screen.queryByText("Popular Sub 5")).toBeNull();
+    expect(screen.queryByText("Popular Sub 6")).toBeNull();
+  });
+
+  it("category page lists only that category's active sub-services", async () => {
+    vi.mocked(api.categoryDetail).mockResolvedValueOnce({
+      category: { id: "c1", slug: "ac", name: "AC Service", description: "All AC care" },
+      services: [
+        { ...service, id: "s1", slug: "ac-install", name: "AC Installation", category: "ac", is_active: true },
+        { ...service, id: "s2", slug: "ac-inactive", name: "Inactive AC Service", category: "ac", is_active: false },
+        { ...service, id: "s3", slug: "tv-mount", name: "TV Wall Mount", category: "tv", is_active: true },
+      ],
+    });
+
+    const { default: CategoryOrServicePage } = await import("@/app/services/[slug]/page");
+    render(await CategoryOrServicePage({ params: Promise.resolve({ slug: "ac" }) }));
+
+    expect(screen.getByText("AC Installation")).toBeTruthy();
+    expect(screen.queryByText("Inactive AC Service")).toBeNull();
+    expect(screen.queryByText("TV Wall Mount")).toBeNull();
+  });
+
+  it("renders quick view popup sections in exact order and hides empty brands", async () => {
+    const richService: Service = {
+      ...service,
+      description: "Full coil & blower foam clean.",
+      brands: [{ name: "LG" }, { name: "Daikin" }],
+      packages: [
+        ...service.packages!,
+        {
+          id: "p2",
+          name: "Foam-Jet Service",
+          pricing_model: "FIXED_PRICE",
+          duration_minutes: 90,
+          inclusions: ["Foam jet clean"],
+          exclusions: ["Gas refill"],
+          starting_price_paise: 89900,
+        },
+      ],
+    };
+
+    const { rerender } = render(
+      <BookingCartProvider>
+        <ServiceDetailModal service={richService} onClose={() => {}} syncUrl={false} />
+      </BookingCartProvider>
+    );
+
+    const orderedLabels = [
+      "Service overview",
+      "Package selector",
+      "Description",
+      "What's included",
+      "Not included",
+      "Reviews",
+      "Brands we service",
+    ];
+    const sections = orderedLabels.map((label) => screen.getByRole("region", { name: label }));
+    for (let i = 0; i < sections.length - 1; i++) {
+      const relation = sections[i].compareDocumentPosition(sections[i + 1]);
+      expect(Boolean(relation & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    }
+
+    expect(await screen.findByText("Super clean foam wash.")).toBeTruthy();
+    expect(screen.getByText("LG")).toBeTruthy();
+    expect(screen.getByText("Daikin")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    expect(await screen.findByRole("button", { name: "Added ✓" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /View cart/i })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Added to cart");
+
+    rerender(
+      <BookingCartProvider>
+        <ServiceDetailModal service={{ ...richService, brands: [] }} onClose={() => {}} syncUrl={false} />
+      </BookingCartProvider>
+    );
+    expect(screen.queryByRole("region", { name: "Brands we service" })).toBeNull();
   });
 });

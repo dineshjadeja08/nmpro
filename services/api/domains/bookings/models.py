@@ -72,7 +72,7 @@ class CartItem(UUIDStampedModel):
     quantity = models.PositiveSmallIntegerField(default=1)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["cart", "service"], name="unique_cart_service_item")]
+        constraints = [models.UniqueConstraint(fields=["cart", "package"], name="unique_cart_package_item")]
 
 
 BOOKING_STATUS_CHOICES = [

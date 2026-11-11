@@ -11,6 +11,8 @@ class Category(UUIDStampedModel):
     description = models.CharField(max_length=240, blank=True)
     image = models.ImageField(upload_to="categories/", blank=True, null=True)
     image_url = models.URLField(max_length=500, blank=True, default="")
+    icon = models.ImageField(upload_to="categories/icons/", blank=True, null=True)
+    icon_url = models.URLField(max_length=500, blank=True, default="")
     banner_image = models.ImageField(upload_to="categories/banners/", blank=True, null=True)
     banner_image_url = models.URLField(max_length=500, blank=True, default="")
     banner_title = models.CharField(max_length=160, blank=True, default="")
@@ -30,6 +32,14 @@ class Category(UUIDStampedModel):
             return self.image_url
         if self.image and getattr(self.image, "name", ""):
             return f"/api/v1/catalog/categories/{self.id}/media/card/"
+        return None
+
+    @property
+    def icon_display(self):
+        if self.icon_url:
+            return self.icon_url
+        if self.icon and getattr(self.icon, "name", ""):
+            return f"/api/v1/catalog/categories/{self.id}/media/icon/"
         return None
 
     @property
@@ -82,6 +92,7 @@ class Service(UUIDStampedModel):
     faq_items = models.JSONField(default=list)
     process_steps = models.JSONField(default=list, blank=True)
     spare_parts_rates = models.JSONField(default=list, blank=True)
+    brands = models.JSONField(default=list, blank=True)
     seo_title = models.CharField(max_length=160, blank=True, default="")
     seo_description = models.CharField(max_length=320, blank=True, default="")
     sort_order = models.PositiveSmallIntegerField(default=0)

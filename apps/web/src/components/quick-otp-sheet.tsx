@@ -109,7 +109,7 @@ export function QuickOtpSheet({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-t-[20px] bg-[#FBF8F5] p-6 shadow-2xl sm:rounded-[20px] animate-[slideUpSheet_.24s_ease-out]"
+        className="w-full max-w-md rounded-t-lg bg-[#FBF8F5] p-6 shadow-2xl sm:rounded-lg animate-[slideUpSheet_.24s_ease-out]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
@@ -125,7 +125,7 @@ export function QuickOtpSheet({
             type="button"
             onClick={onClose}
             aria-label="Close OTP dialog"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E8E1DB] bg-white text-[#57534E]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-[#E8E1DB] bg-white text-[#57534E]"
           >
             <X size={18} strokeWidth={1.5} />
           </button>
@@ -138,7 +138,7 @@ export function QuickOtpSheet({
         </p>
 
         {error && (
-          <div role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800">
+          <div role="alert" className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-semibold text-rose-800">
             {error}
           </div>
         )}
@@ -147,7 +147,7 @@ export function QuickOtpSheet({
 
         {!challengeSent ? (
           <form onSubmit={handleSendOtp} className="mt-4 space-y-4">
-            <div className="flex min-h-[48px] items-center overflow-hidden rounded-2xl border border-[#D6CEC6] bg-white px-4 focus-within:border-[#800020]">
+            <div className="flex min-h-[48px] items-center overflow-hidden rounded-lg border border-[#D6CEC6] bg-white px-4 focus-within:border-[#800020]">
               <span className="pr-3 text-sm font-bold text-[#57534E] border-r border-[#E8E1DB]">+91</span>
               <input
                 type="tel"
@@ -165,7 +165,7 @@ export function QuickOtpSheet({
             <button
               type="submit"
               disabled={busy || !validPhone}
-              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-50"
+              className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-50"
             >
               {busy ? <Loader2 size={16} className="animate-spin" /> : null}
               <span>{busy ? "Sending code..." : "Send OTP"}</span>
@@ -182,11 +182,11 @@ export function QuickOtpSheet({
               value={otp}
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="6-digit OTP"
-              className="min-h-[52px] w-full rounded-2xl border border-[#D6CEC6] bg-white px-4 text-center text-xl font-bold tracking-[0.35em] text-[#1C1917] outline-none focus:border-[#800020]"
+              className="min-h-[52px] w-full rounded-lg border border-[#D6CEC6] bg-white px-4 text-center text-xl font-bold tracking-[0.35em] text-[#1C1917] outline-none focus:border-[#800020]"
               autoFocus
             />
             {devMode && (
-              <p className="rounded-xl bg-[#f5ebe8] px-3 py-2 text-center text-xs font-semibold text-[#800020]">
+              <p className="rounded-md bg-[#f5ebe8] px-3 py-2 text-center text-xs font-semibold text-[#800020]">
                 Development test OTP: <strong>123456</strong>
               </p>
             )}
@@ -197,14 +197,14 @@ export function QuickOtpSheet({
                   setChallengeSent(false);
                   setOtp("");
                 }}
-                className="min-h-[48px] rounded-full border border-[#D6CEC6] bg-white px-4 text-xs font-bold text-[#57534E]"
+                className="min-h-[48px] rounded-md border border-[#D6CEC6] bg-white px-4 text-xs font-bold text-[#57534E]"
               >
                 Change number
               </button>
               <button
                 type="submit"
                 disabled={busy || otp.length !== 6}
-                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-50"
+                className="flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-50"
               >
                 {busy ? <Loader2 size={16} className="animate-spin" /> : null}
                 <span>Verify & continue</span>

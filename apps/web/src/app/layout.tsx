@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces, Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import type { ReactNode } from "react";
 import { BookingCartDrawer } from "@/components/booking-cart-drawer";
 import { BookingCartProvider } from "@/components/booking-cart-provider";
@@ -9,16 +9,10 @@ import { LocationProvider } from "@/components/location-provider";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import "./globals.css";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-heading",
-  display: "swap",
-});
-const inter = Inter({
+const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
-  variable: "--font-body",
+  variable: "--font-plus-jakarta",
   display: "swap",
 });
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -39,8 +33,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${fraunces.variable} ${inter.variable}`}>
-      <body className="pb-16 md:pb-0">
+    <html lang="en" className={plusJakartaSans.variable}>
+      <body className={`${plusJakartaSans.className} pb-16 md:pb-0`}>
         <LocationProvider>
           <BookingCartProvider>
             <Header />

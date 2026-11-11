@@ -3,44 +3,46 @@ import { Brand } from "./brand";
 
 export function Footer() {
   return (
-    <footer className="site-footer">
-      <div className="container footer-grid">
-        <div>
-          <Brand />
-          <p>
-            Namma area, namma pros. Home repairs, appliance care, and maintenance across Chennai and Tamil Nadu with clear pricing and a 30-day warranty.
+    <footer className="bg-[#1C1614] text-[#D6CEC6]">
+      <div className="container grid gap-8 py-12 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="space-y-3">
+          <div className="inline-flex">
+            <Brand variant="dark" compact />
+          </div>
+          <p className="text-xs leading-relaxed text-[#A89F96]">
+            Home services across Tamil Nadu, starting in Chennai. Verified professionals, upfront pricing, and a 30-day rework guarantee.
           </p>
         </div>
 
-        <div>
-          <b>Popular Services</b>
-          <Link href="/services/ac">AC Service &amp; Repair</Link>
-          <Link href="/services/washing-machine">Washing Machine Repair</Link>
-          <Link href="/services/water-heater">Water Heater &amp; Geyser</Link>
-          <Link href="/services/water-tank-cleaning">Water Tank Cleaning</Link>
-          <Link href="/services">All Services</Link>
+        <div className="flex flex-col gap-2 text-xs">
+          <b className="mb-1 text-white">Services</b>
+          <Link href="/services/ac" className="hover:text-white">AC Service in Chennai</Link>
+          <Link href="/services/water-tank-cleaning" className="hover:text-white">Water Tank Cleaning</Link>
+          <Link href="/services/washing-machine" className="hover:text-white">Washing Machine Repair</Link>
+          <Link href="/services" className="hover:text-white">All services</Link>
         </div>
 
-        <div>
-          <b>Book &amp; Manage</b>
-          <Link href="/search">Search by Problem</Link>
-          <Link href="/book">Pick a Slot &amp; Book</Link>
-          <Link href="/bookings">My Bookings</Link>
-          <Link href="/account">Saved Addresses &amp; Account</Link>
+        <div className="flex flex-col gap-2 text-xs">
+          <b className="mb-1 text-white">Company</b>
+          <Link href="/#how-it-works" className="hover:text-white">How it works</Link>
+          <Link href="/join-as-technician" className="hover:text-white">Join as a pro</Link>
+          <Link href="/search" className="hover:text-white">Search by problem</Link>
         </div>
 
-        <div>
-          <b>For Professionals</b>
-          <Link href="/join-as-technician">Join as a Pro</Link>
-          <p>
-            Available across active Chennai service zones. Extra parts are billed only after your explicit approval.
-          </p>
+        <div className="flex flex-col gap-2 text-xs">
+          <b className="mb-1 text-white">Help</b>
+          <Link href="/bookings" className="hover:text-white">My bookings</Link>
+          <Link href="/account" className="hover:text-white">Account &amp; addresses</Link>
+          <Link href="/payments" className="hover:text-white">Payment history</Link>
+          <Link href="/book" className="hover:text-white">Book a visit</Link>
         </div>
       </div>
 
-      <div className="container footer-bottom">
-        <span>© {new Date().getFullYear()} nammapros.</span>
-        <span>Namma area, namma pros · Chennai &amp; Tamil Nadu</span>
+      <div className="border-t border-white/10">
+        <div className="container flex flex-wrap items-center justify-between gap-2 py-4 text-[11px] text-[#8C8278]">
+          <span>© {new Date().getFullYear()} NammaPros. Prices shown are inclusive of visit charges unless stated.</span>
+          <span>Namma area, namma pros · Chennai &amp; Tamil Nadu</span>
+        </div>
       </div>
     </footer>
   );

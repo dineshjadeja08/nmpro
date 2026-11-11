@@ -185,8 +185,42 @@ def calculate_price(rule: PricingRule):
     return lines, sum(line["amount_paise"] for line in lines)
 
 
+def _normalize_cart_items(raw_items, default_package_id):
+    if not raw_items:
+        return []
+    merged = {}
+    for entry in raw_items:
+        if not isinstance(entry, dict):
+            continue
+        pid = str(entry.get("package_id") or "").strip()
+        if not pid:
+            continue
+        try:
+            qty = int(entry.get("quantity", 1))
+        except (TypeError, ValueError):
+            qty = 1
+        qty = max(1, min(20, qty))
+        merged[pid] = min(20, merged.get(pid, 0) + qty)
+    if not merged:
+        return []
+    if str(default_package_id) not in merged:
+        merged = {str(default_package_id): 1, **merged}
+    return [{"package_id": pid, "quantity": qty} for pid, qty in merged.items()]
+
+
+def _item_advance_paise(rule: PricingRule, unit_total: int) -> int:
+    if rule.payment_policy == "PAY_AT_VISIT":
+        return 0
+    if rule.payment_policy == "ADVANCE":
+        if rule.advance_type == "PERCENTAGE":
+            return (unit_total * rule.advance_percentage) // 100
+        if rule.advance_type == "FIXED":
+            return min(rule.advance_amount_paise, unit_total)
+    return unit_total
+
+
 @transaction.atomic
-def create_quote(user, hold_id):
+def create_quote(user, hold_id, cart_items=None):
     hold_ref = SlotHold.objects.filter(id=hold_id, user=user).values("slot_id").first()
     if not hold_ref:
         raise ValidationError("Reservation not found.")
@@ -201,15 +235,46 @@ def create_quote(user, hold_id):
     ).first()
     if not rule:
         raise Conflict("Pricing is no longer available.")
-    lines, total = calculate_price(rule)
-    advance_paise = total
-    if rule.payment_policy == "ADVANCE":
-        if rule.advance_type == "PERCENTAGE":
-            advance_paise = (total * rule.advance_percentage) // 100
-        elif rule.advance_type == "FIXED":
-            advance_paise = min(rule.advance_amount_paise, total)
-    elif rule.payment_policy == "PAY_AT_VISIT":
+
+    normalized = _normalize_cart_items(cart_items, hold.slot.package_id)
+    is_multi = len(normalized) > 1 or (len(normalized) == 1 and normalized[0]["quantity"] > 1)
+    if not is_multi:
+        lines, total = calculate_price(rule)
+        advance_paise = _item_advance_paise(rule, total)
+    else:
+        lines = []
+        total = 0
         advance_paise = 0
+        for item in normalized:
+            pkg = ServicePackage.objects.select_related("service").filter(id=item["package_id"], is_active=True).first()
+            if not pkg:
+                raise Conflict("One of the selected services is no longer available.")
+            item_zone = serviceable(pkg, hold.address)
+            if not item_zone or item_zone.id != hold.slot.zone_id:
+                raise Conflict(f"{pkg.service.name} is unavailable at this address.")
+            pkg_rule = PricingRule.objects.select_related("package").filter(
+                package=pkg, zone=hold.slot.zone, is_active=True,
+            ).first()
+            if not pkg_rule:
+                raise Conflict(f"Pricing unavailable for {pkg.service.name}.")
+            _, unit_total = calculate_price(pkg_rule)
+            unit_adv = _item_advance_paise(pkg_rule, unit_total)
+            qty = item["quantity"]
+            label = f"{pkg.service.name} — {pkg.name}" + (f" × {qty}" if qty > 1 else "")
+            lines.append({
+                "code": "ITEM",
+                "package_id": str(pkg.id),
+                "name": label,
+                "quantity": qty,
+                "unit_paise": unit_total,
+                "amount_paise": unit_total * qty,
+                "pricing_rule_id": str(pkg_rule.id),
+                "pricing_version": pkg_rule.version,
+                "payment_policy": pkg_rule.payment_policy,
+            })
+            total += unit_total * qty
+            advance_paise += unit_adv * qty
+
     remaining_balance_paise = total - advance_paise
     return CheckoutQuote.objects.create(hold=hold, user=user, pricing_rule=rule,
                                         pricing_version=rule.version, lines=lines, total_paise=total,
@@ -283,6 +348,20 @@ def serialize_booking(booking):
             "review": {"rating": review.rating, "comment": review.comment, "tags": review.tags or [], "photo_url": review.photo_display} if review else None,
             "service": booking.service.name, "package": booking.package.name,
             "package_id": str(booking.package_id), "address_id": str(booking.address_id),
+            "items": [
+                {
+                    "service": bi.package.service.name,
+                    "package": bi.package.name,
+                    "package_id": str(bi.package_id),
+                    "quantity": bi.quantity,
+                }
+                for bi in booking.items.select_related("package__service").all()
+            ] or [{
+                "service": booking.service.name,
+                "package": booking.package.name,
+                "package_id": str(booking.package_id),
+                "quantity": 1,
+            }],
             "can_cancel": can_cancel, "can_reschedule": can_reschedule,
             "address": {"label": booking.address.label, "line_1": booking.address.line_1,
                         "locality": booking.address.locality, "city": booking.address.city,
@@ -331,13 +410,44 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
     rule = PricingRule.objects.select_related("package").filter(id=quote.pricing_rule_id, is_active=True).first()
     if not rule or rule.version != quote.pricing_version:
         raise Conflict("The price changed. Request and accept a new quote.")
-    _, current_total = calculate_price(rule)
-    if current_total != quote.total_paise or accepted_total != quote.total_paise:
-        raise Conflict("The price changed. Request and accept a new quote.")
-    if rule.payment_policy in ("PREPAID", "ADVANCE") and not settings.RAZORPAY_ENABLED:
-        raise Conflict("Online payment is not yet available for this service.")
-    if rule.payment_policy not in ("PREPAID", "PAY_AT_VISIT", "ADVANCE"):
-        raise Conflict("Payment policy is not supported.")
+
+    item_lines = [line for line in (quote.lines or []) if isinstance(line, dict) and line.get("code") == "ITEM"]
+    if item_lines:
+        current_total = 0
+        requires_online_payment = False
+        for line in item_lines:
+            item_rule = PricingRule.objects.select_related("package").filter(
+                id=line.get("pricing_rule_id"), package_id=line.get("package_id"), is_active=True,
+            ).first()
+            if not item_rule or item_rule.version != line.get("pricing_version"):
+                raise Conflict("The price changed. Request and accept a new quote.")
+            _, unit_total = calculate_price(item_rule)
+            if unit_total != line.get("unit_paise"):
+                raise Conflict("The price changed. Request and accept a new quote.")
+            current_total += unit_total * int(line.get("quantity", 1))
+            if item_rule.payment_policy in ("PREPAID", "ADVANCE"):
+                requires_online_payment = True
+            elif item_rule.payment_policy != "PAY_AT_VISIT":
+                raise Conflict("Payment policy is not supported.")
+        if current_total != quote.total_paise or accepted_total != quote.total_paise:
+            raise Conflict("The price changed. Request and accept a new quote.")
+        if requires_online_payment and not settings.RAZORPAY_ENABLED:
+            raise Conflict("Online payment is not yet available for this service.")
+        effective_policy = (
+            "PAY_AT_VISIT"
+            if not requires_online_payment
+            else ("PREPAID" if quote.remaining_balance_paise == 0 else "ADVANCE")
+        )
+    else:
+        _, current_total = calculate_price(rule)
+        if current_total != quote.total_paise or accepted_total != quote.total_paise:
+            raise Conflict("The price changed. Request and accept a new quote.")
+        if rule.payment_policy in ("PREPAID", "ADVANCE") and not settings.RAZORPAY_ENABLED:
+            raise Conflict("Online payment is not yet available for this service.")
+        if rule.payment_policy not in ("PREPAID", "PAY_AT_VISIT", "ADVANCE"):
+            raise Conflict("Payment policy is not supported.")
+        requires_online_payment = rule.payment_policy in ("PREPAID", "ADVANCE")
+        effective_policy = rule.payment_policy
     occupied = occupied_bookings(slot, timezone.now())
     active_other = SlotHold.objects.filter(slot=slot, status="ACTIVE", expires_at__gt=timezone.now()).exclude(id=hold.id).count()
     if occupied + active_other >= slot.capacity:
@@ -345,7 +455,6 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
     if settings.PILOT_ENABLED and pilot_remaining(slot, now, exclude_hold_id=hold.id) <= 0:
         raise Conflict("The pilot has reached its daily booking limit.")
     reference = next_booking_reference(now)
-    requires_online_payment = rule.payment_policy in ("PREPAID", "ADVANCE")
     payment_expires_at = (min(now + timedelta(minutes=settings.PAYMENT_CHECKOUT_MINUTES),
                               slot.start_at - timedelta(minutes=slot.minimum_lead_minutes)) if requires_online_payment else None)
     target_status = "AWAITING_PAYMENT" if requires_online_payment else "CONFIRMED_UNPAID"
@@ -358,7 +467,15 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
                                      confirmed_at=None if requires_online_payment else timezone.now(),
                                      problem_description=str(problem_description or "")[:2000],
                                      start_otp_code=f"{secrets.randbelow(10000):04d}")
-    BookingItem.objects.create(booking=booking, package=slot.package)
+    if item_lines:
+        for line in item_lines:
+            BookingItem.objects.create(
+                booking=booking,
+                package_id=line["package_id"],
+                quantity=int(line.get("quantity", 1)),
+            )
+    else:
+        BookingItem.objects.create(booking=booking, package=slot.package)
     BookingPriceSnapshot.objects.create(booking=booking, pricing_rule_id=rule.id,
                                          pricing_version=rule.version, lines=quote.lines,
                                          total_paise=quote.total_paise,
@@ -366,7 +483,7 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
                                          advance_percentage=rule.advance_percentage,
                                          advance_paise=quote.advance_paise,
                                          remaining_balance_paise=quote.remaining_balance_paise,
-                                         payment_policy=rule.payment_policy,
+                                         payment_policy=effective_policy,
                                          cancellation_cutoff_minutes=rule.cancellation_cutoff_minutes,
                                          reschedule_cutoff_minutes=rule.reschedule_cutoff_minutes)
     BookingStatusEvent.objects.create(booking=booking, from_status="DRAFT", to_status=booking.status, actor=user)

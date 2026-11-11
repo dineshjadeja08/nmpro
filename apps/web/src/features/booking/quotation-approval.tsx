@@ -50,11 +50,11 @@ export function QuotationApproval({
 
   return (
     <section
-      className="rounded-[20px] bg-white p-6 shadow-[0_10px_30px_rgba(28,25,23,0.06)] space-y-4"
+      className="rounded-lg bg-white p-6 shadow-[0_10px_30px_rgba(28,25,23,0.06)] space-y-4"
       aria-label="Additional work quotations"
     >
       <div className="flex items-start gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[#f5ebe8] text-[#800020]">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#f5ebe8] text-[#800020]">
           <Wrench size={18} strokeWidth={1.5} />
         </span>
         <div>
@@ -66,7 +66,7 @@ export function QuotationApproval({
       </div>
 
       {error && (
-        <p className="rounded-xl bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800" role="alert">
+        <p className="rounded-md bg-rose-50 px-4 py-3 text-xs font-semibold text-rose-800" role="alert">
           {error}
         </p>
       )}
@@ -76,11 +76,11 @@ export function QuotationApproval({
           const isPending = q.status === "SUBMITTED";
           const expired = new Date(q.valid_until) <= new Date();
           return (
-            <div key={q.id} className="rounded-2xl bg-[#FBF8F5] p-4 space-y-3">
+            <div key={q.id} className="rounded-lg bg-[#FBF8F5] p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold uppercase tracking-wider text-[#57534E]">Status</span>
                 <span
-                  className={`rounded-full px-3 py-0.5 text-xs font-bold ${
+                  className={`rounded-md px-3 py-0.5 text-xs font-bold ${
                     q.status === "APPROVED"
                       ? "bg-emerald-100 text-emerald-800"
                       : q.status === "REJECTED"
@@ -125,14 +125,14 @@ export function QuotationApproval({
                       type="button"
                       disabled={busy || expired}
                       onClick={() => void decide(q.id, "approve")}
-                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full bg-[#800020] px-5 text-xs font-bold text-white shadow-sm hover:bg-[#5e0017] disabled:opacity-50"
+                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-[#800020] px-5 text-xs font-bold text-white shadow-sm hover:bg-[#5e0017] disabled:opacity-50"
                     >
                       <Check size={15} strokeWidth={1.75} /> Approve
                     </button>
                     <button
                       type="button"
                       onClick={() => setDiscussingId(discussingId === q.id ? null : q.id)}
-                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full border border-[#D6CEC6] bg-white px-5 text-xs font-bold text-[#1C1917] hover:border-[#800020]"
+                      className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md border border-[#D6CEC6] bg-white px-5 text-xs font-bold text-[#1C1917] hover:border-[#800020]"
                     >
                       <MessageSquare size={15} strokeWidth={1.5} className="text-[#800020]" /> Discuss
                     </button>
@@ -141,14 +141,14 @@ export function QuotationApproval({
                       disabled={busy}
                       onClick={() => void decide(q.id, "reject")}
                       aria-label="Decline extra work"
-                      className="inline-flex min-h-[48px] items-center justify-center gap-1 rounded-full border border-[#E8E1DB] bg-white px-4 text-xs font-semibold text-[#57534E] hover:text-rose-700"
+                      className="inline-flex min-h-[48px] items-center justify-center gap-1 rounded-md border border-[#E8E1DB] bg-white px-4 text-xs font-semibold text-[#57534E] hover:text-rose-700"
                     >
                       <X size={15} strokeWidth={1.5} /> Decline
                     </button>
                   </div>
 
                   {discussingId === q.id && (
-                    <div className="rounded-xl border border-[#E8E1DB] bg-white p-3.5 text-xs text-[#57534E] space-y-2">
+                    <div className="rounded-md border border-[#E8E1DB] bg-white p-3.5 text-xs text-[#57534E] space-y-2">
                       <p>
                         Ask your technician to clarify why this component is needed before approving, or continue with only your booked visit.
                       </p>

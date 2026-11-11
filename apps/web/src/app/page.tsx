@@ -1,318 +1,321 @@
 import {
   ArrowRight,
-  CalendarDays,
   CheckCircle2,
-  MapPin,
-  MessageCircle,
-  Search,
-  ShieldCheck,
-  Sparkles,
   Star,
-  Wallet,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
+import { CategoryIcon } from "@/components/category-icon";
 import { OfferSpotlight } from "@/components/offer-spotlight";
 import { ProblemSearch } from "@/components/problem-search";
-import { ServiceCard } from "@/components/service-card";
+import { ServiceCatalogGrid } from "@/components/service-catalog-grid";
 import { ServiceImage } from "@/components/service-image";
 import { getCatalog } from "@/lib/catalog";
-import { getCategoryVisualSrc, resolveUploadedMediaUrl, serviceListImage } from "@/lib/service-images";
-
-function formatRupees(paise: number) {
-  return `₹${Math.round(paise / 100).toLocaleString("en-IN")}`;
-}
+import { resolveUploadedMediaUrl } from "@/lib/service-images";
+import { filterCanonicalCategories, pickPopularServices } from "@/lib/services";
 
 export default async function Home() {
   const { data, error } = await getCatalog();
-  const categories = data?.categories ?? [];
+  const categories = filterCanonicalCategories(data?.categories ?? []);
   const services = data?.services ?? [];
+  const popularServices = pickPopularServices(services, 4);
   const reviews = (data?.reviews ?? []).slice(0, 3);
   const banners = data?.banners ?? [];
   const trust = data?.trust_stats;
 
-  // Compute real "from ₹X" per category from active services in that category
-  const minPriceByCategory = new Map<string, number>();
-  for (const svc of services) {
-    if (svc.starting_price_paise != null) {
-      const prev = minPriceByCategory.get(svc.category);
-      if (prev === undefined || svc.starting_price_paise < prev) {
-        minPriceByCategory.set(svc.category, svc.starting_price_paise);
-      }
-    }
-  }
-
-  // Up to 2 real uploaded photos for clean editorial showcase beside the problem search (if configured)
-  const showcasePhotos = [
-    ...categories.map((c) => ({ src: getCategoryVisualSrc(c), alt: c.name })).filter((x) => Boolean(x.src)),
-    ...services.map((s) => ({ src: serviceListImage(s), alt: s.name })).filter((x) => Boolean(x.src)),
-  ].slice(0, 2);
-
   return (
-    <main>
-      {/* 1. Problem-First Hero */}
-      <section className="border-b border-[#E8E1DB] bg-[#FBF8F5] py-12 sm:py-16">
-        <div className="container grid items-center gap-10 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-6">
-            <span className="inline-flex items-center gap-2 rounded-full bg-[#f5ebe8] px-3.5 py-1.5 text-xs font-bold tracking-wide text-[#800020]">
-              <MapPin size={14} strokeWidth={1.5} />
-              <span>Namma area, namma pros · Chennai</span>
+    <main className="bg-[#FBF8F5]">
+      {/* 1. Split Hero Banner (Blush Rose #FBECEF + Technician on Right) */}
+      <section className="relative overflow-hidden border-b border-[#EAE3DC] bg-[#FBECEF] pt-6 pb-0 text-[#1C1917] sm:pt-8">
+        <div className="container grid items-end gap-6 lg:grid-cols-[1.08fr_0.92fr] lg:gap-6">
+          <div className="max-w-2xl space-y-5 pb-2 lg:pb-10">
+            <span className="inline-flex items-center rounded-md border border-[#800020]/15 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#800020] shadow-2xs">
+              Namma area, namma pros.
             </span>
 
-            <h1 className="font-serif text-4xl font-semibold tracking-tight text-[#1C1917] sm:text-5xl lg:text-6xl">
-              What’s not working at home?
+            <h1 className="text-3xl font-bold tracking-tight text-[#1C1917] sm:text-5xl lg:text-[50px] lg:leading-[1.12]">
+              What’s not working{" "}
+              <span className="text-[#800020]">at home?</span>
             </h1>
-            <p className="max-w-xl text-base leading-relaxed text-[#57534E]">
-              Tell us the problem in plain words. We’ll match a verified pro, show clear upfront prices, and arrive in your chosen slot.
+
+            <p className="max-w-lg text-sm font-normal leading-relaxed text-[#57534E] sm:text-base">
+              Tell us the problem. We send a verified pro in the slot you pick, with the price shown before you book.
             </p>
 
             <ProblemSearch showChips />
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <Link
+                href="/book"
+                className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#800020] px-5 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017]"
+              >
+                <span>Book a visit</span>
+                <ArrowRight size={15} strokeWidth={2} />
+              </Link>
+              <Link
+                href="/services"
+                className="inline-flex min-h-[44px] items-center rounded-md border border-[#800020]/20 bg-white px-5 text-xs font-semibold text-[#1C1917] transition hover:border-[#800020] hover:text-[#800020]"
+              >
+                Explore all services
+              </Link>
+            </div>
           </div>
 
-          {showcasePhotos.length > 0 && (
-            <div className="hidden gap-4 sm:grid sm:grid-cols-2 lg:grid-cols-1">
-              {showcasePhotos.map((photo, idx) => (
-                <div
-                  key={idx}
-                  className="group relative aspect-[16/9] overflow-hidden rounded-[20px] bg-[#F4EFE9] shadow-[0_14px_35px_rgba(28,25,23,0.08)]"
-                >
-                  <ServiceImage src={photo.src} alt={photo.alt} priority={idx === 0} />
+          <div className="relative flex items-end justify-center lg:justify-end">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 bottom-0 top-2 rounded-t-lg bg-[radial-gradient(circle_at_60%_45%,rgba(255,255,255,0.75),transparent_70%)]"
+            />
+            <Image
+              src="/images/brand/hero-technician-cutout.png"
+              alt="Verified NammaPros home service technician"
+              width={346}
+              height={566}
+              priority
+              unoptimized
+              className="relative z-10 h-[370px] w-auto object-contain object-bottom sm:h-[450px] lg:h-[520px] xl:h-[550px]"
+            />
+
+            <div className="absolute bottom-4 left-2 right-2 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#EAE3DC] bg-white/95 px-3.5 py-2.5 text-[#1C1917] shadow-md backdrop-blur-sm sm:left-6 sm:right-2">
+              <div className="inline-flex items-center gap-2 text-[11px] leading-tight">
+                <CheckCircle2 size={15} className="shrink-0 text-emerald-700" />
+                <div>
+                  <strong className="block font-bold text-[#1C1917]">Verified pros</strong>
+                  <span className="font-normal text-[#57534E]">Direct slot booking · Upfront pricing</span>
                 </div>
-              ))}
+              </div>
+
+              {trust?.average_rating && trust.review_count > 0 && (
+                <div className="inline-flex items-center gap-1.5 rounded-md bg-[#1C1917] px-2.5 py-1 text-white">
+                  <span className="text-xs font-bold leading-none">{trust.average_rating}</span>
+                  <Star size={12} className="fill-[#C8A35B] text-[#C8A35B]" />
+                  <span className="text-[10px] font-normal text-[#D6CEC6]">{trust.review_count} reviews</span>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </section>
 
-      {/* 2. Honest Real-Data Trust Strip */}
-      <section className="border-b border-[#E8E1DB] bg-white">
-        <div className="container flex flex-wrap items-center gap-x-6 gap-y-2.5 py-4 text-xs font-semibold text-[#1C1917] sm:text-sm">
-          {trust?.average_rating && trust.review_count > 0 && (
-            <span className="inline-flex items-center gap-1.5">
-              <Star size={16} strokeWidth={1.5} className="fill-[#C8A35B] text-[#C8A35B]" />
-              <strong>{trust.average_rating} ★</strong>
-              <span className="text-[#57534E]">from {trust.review_count} verified reviews</span>
-            </span>
-          )}
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2 size={16} strokeWidth={1.5} className="text-[#800020]" />
-            Verified pros
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <ShieldCheck size={16} strokeWidth={1.5} className="text-[#800020]" />
-            30-day service warranty
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <Wallet size={16} strokeWidth={1.5} className="text-[#800020]" />
-            Price before booking
-          </span>
-        </div>
-      </section>
-
-      {/* 3. Category Grid (2 col mobile, 4 col desktop, 4:3 photo + "from ₹X") */}
+      {/* 2. Category Icon Grid (Homepage only: 2 rows x 7 columns on desktop) */}
       {categories.length > 0 && (
-        <section className="section container">
-          <div className="section-heading">
-            <div>
-              <span className="section-kicker">CATEGORIES</span>
-              <h2>Browse by appliance or home care.</h2>
-            </div>
-            <Link href="/services" className="text-link">
-              All categories <ArrowRight size={16} strokeWidth={1.5} />
+        <section className="container pt-10 pb-10" aria-label="Service categories">
+          <div className="mb-4 flex items-baseline justify-between gap-4">
+            <h2 className="font-serif text-xl font-semibold text-[#1C1917] sm:text-2xl">
+              What do you need fixed?
+            </h2>
+            <Link href="/services" className="text-xs font-bold text-[#800020] hover:underline">
+              See all services →
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            {categories.slice(0, 8).map((c) => {
-              const imgSrc = getCategoryVisualSrc(c);
-              const fromPaise = minPriceByCategory.get(c.slug);
+
+          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5 lg:grid-cols-7">
+            {categories.map((c) => (
+              <Link
+                key={c.id}
+                href={`/services/${encodeURIComponent(c.slug)}`}
+                className="group relative flex aspect-square w-full flex-col overflow-hidden rounded-lg border border-[#EAE3DC] bg-[#F5F5F5] text-inherit no-underline shadow-[0_2px_10px_rgba(28,25,23,0.03)] transition hover:border-[#800020]/50 md:hover:-translate-y-0.5 md:hover:shadow-[0_10px_24px_rgba(28,25,23,0.07)]"
+              >
+                <div className="relative min-h-0 w-full flex-1 p-2.5 sm:p-3.5">
+                  <div className="relative h-full w-full">
+                    <CategoryIcon category={c} fillContainer />
+                  </div>
+                </div>
+                <span className="w-full shrink-0 border-t border-[#EAE3DC]/80 bg-white/95 px-1.5 py-1.5 text-center text-[10px] font-semibold leading-tight text-[#1C1917] line-clamp-2 sm:text-xs">
+                  {c.name}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* 3. 4-Column Divided Trust Strip */}
+      <section className="container pb-10">
+        <div className="grid divide-y divide-[#EAE3DC] overflow-hidden rounded-lg border border-[#EAE3DC] bg-white sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
+          {[
+            {
+              title: "Verified pros",
+              desc: "ID, address and skill checked before the first job.",
+            },
+            {
+              title: "Price before you book",
+              desc: "Every package shows what is included and what is not.",
+            },
+            {
+              title: "30-day service warranty",
+              desc: "Same issue comes back? We fix it free.",
+            },
+            {
+              title: "Free reschedule",
+              desc: "Change your slot up to 2 hours before the visit.",
+            },
+          ].map((item) => (
+            <div key={item.title} className="p-4 sm:p-5">
+              <strong className="block text-xs font-bold text-[#1C1917]">{item.title}</strong>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#57534E]">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* 4. Three steps. No phone calls. */}
+      <section id="how-it-works" className="border-y border-[#EAE3DC] bg-white py-12">
+        <div className="container">
+          <h2 className="mb-6 font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">
+            Three steps. No phone calls.
+          </h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              {
+                step: "1",
+                title: "Pick",
+                desc: "Search your problem or choose a package. See the price and what’s included.",
+              },
+              {
+                step: "2",
+                title: "Schedule",
+                desc: "Pick a day and a 1-hour window. Confirm with a quick OTP — no account forms.",
+              },
+              {
+                step: "3",
+                title: "Relax",
+                desc: "See your pro’s name, arrival updates, and approve any extra parts cleanly.",
+              },
+            ].map((item) => (
+              <div
+                key={item.title}
+                className="rounded-lg border border-[#EFE9E2] bg-[#FAF6F2] p-6"
+              >
+                <span className="grid h-7 w-7 place-items-center rounded-md bg-[#800020] text-xs font-bold text-white">
+                  {item.step}
+                </span>
+                <h3 className="mt-4 font-serif text-lg font-bold text-[#1C1917]">{item.title}</h3>
+                <p className="mt-1.5 text-xs leading-relaxed text-[#57534E]">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 5. Featured Dark Offer Card */}
+      <OfferSpotlight banners={banners} />
+
+      {/* 6. From homes near you */}
+      {reviews.length > 0 && (
+        <section className="container py-10">
+          <h2 className="mb-5 font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">From homes near you</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {reviews.map((rev) => {
+              const initial = (rev.customer_name?.trim()[0] || "N").toUpperCase();
               return (
-                <Link
-                  key={c.id}
-                  href={`/services/${encodeURIComponent(c.slug)}`}
-                  className="group flex flex-col justify-between overflow-hidden rounded-[20px] bg-white p-3.5 no-underline text-inherit shadow-[0_10px_30px_rgba(28,25,23,0.05)] transition hover:shadow-[0_16px_38px_rgba(28,25,23,0.09)] sm:p-4"
+                <article
+                  key={rev.id}
+                  className="flex flex-col justify-between rounded-lg border border-[#EAE3DC] bg-white p-5 shadow-[0_4px_16px_rgba(28,25,23,0.03)]"
                 >
                   <div>
-                    {imgSrc && (
-                      <div className="relative mb-3 aspect-[4/3] w-full overflow-hidden rounded-[14px] bg-[#F4EFE9]">
-                        <ServiceImage src={imgSrc} alt={c.name} />
+                    <div className="flex items-center gap-0.5 text-[#C8A35B]" aria-label={`${rev.rating} out of 5 stars`}>
+                      {Array.from({ length: rev.rating }).map((_, idx) => (
+                        <Star key={idx} size={13} className="fill-[#C8A35B] text-[#C8A35B]" />
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs leading-relaxed text-[#1C1917]">
+                      “{rev.comment || "Smooth visit, clear communication, and tidy finish."}”
+                    </p>
+                    {rev.photo_url && resolveUploadedMediaUrl(rev.photo_url) && (
+                      <div className="relative mt-3 aspect-[16/7] w-full overflow-hidden rounded-md bg-[#FAF6F2]">
+                        <ServiceImage src={rev.photo_url} alt={`Work done for ${rev.customer_name}`} fit="contain" />
                       </div>
                     )}
-                    <h3 className="font-serif text-base font-bold text-[#1C1917] sm:text-lg">{c.name}</h3>
-                    {c.description && (
-                      <p className="mt-1 line-clamp-2 text-xs text-[#57534E]">{c.description}</p>
-                    )}
                   </div>
-                  <div className="mt-3 flex items-center justify-between pt-2 text-xs font-bold text-[#800020]">
-                    <span>{fromPaise != null ? `from ${formatRupees(fromPaise)}` : "Explore services"}</span>
-                    <ArrowRight size={14} strokeWidth={1.5} />
+                  <div className="mt-4 flex items-center gap-2.5 border-t border-[#F4EFE9] pt-3">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#F5E6EA] text-xs font-bold text-[#800020]">
+                      {initial}
+                    </span>
+                    <div className="min-w-0 text-[11px]">
+                      <strong className="block truncate text-[#1C1917]">{rev.customer_name}</strong>
+                      <span className="block truncate text-[#57534E]">
+                        {[rev.service_name, rev.area].filter(Boolean).join(" · ")}
+                      </span>
+                    </div>
                   </div>
-                </Link>
+                </article>
               );
             })}
           </div>
         </section>
       )}
 
-      {/* 4. How It Works: Pick -> Schedule -> Relax */}
-      <section className="section tinted-section">
-        <div className="container">
-          <div className="section-heading">
+      {/* 7. Bottom Dual Support & Partner Cards */}
+      <section className="container pt-4 pb-8">
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="flex flex-col justify-between rounded-lg bg-[#E7F2EC] p-6 sm:p-7">
             <div>
-              <span className="section-kicker">HOW IT WORKS</span>
-              <h2>Pick. Schedule. Relax.</h2>
+              <h2 className="font-serif text-xl font-semibold text-[#1C1917]">Not sure what to book?</h2>
+              <p className="mt-1.5 text-xs leading-relaxed text-[#3F5248]">
+                Tell us what’s happening in plain words — we’ll guide you to the right service before you book.
+              </p>
+            </div>
+            <div className="mt-5">
+              <Link
+                href="/search"
+                className="inline-flex min-h-[42px] items-center rounded-md bg-[#117A4B] px-5 text-xs font-bold text-white transition hover:bg-[#0D603B]"
+              >
+                Get help choosing
+              </Link>
             </div>
           </div>
-          <div className="grid gap-5 md:grid-cols-3">
-            {[
-              {
-                num: "01",
-                icon: Search,
-                title: "Pick",
-                desc: "Start with your problem or appliance, review clear inclusions, and choose an option.",
-              },
-              {
-                num: "02",
-                icon: CalendarDays,
-                title: "Schedule",
-                desc: "Choose your preferred visit window first, verify via OTP, and pin your address.",
-              },
-              {
-                num: "03",
-                icon: Sparkles,
-                title: "Relax",
-                desc: "Your verified pro arrives in your chosen slot with a 4-digit start OTP and 30-day warranty.",
-              },
-            ].map(({ num, icon: Icon, title, desc }) => (
-              <div
-                key={title}
-                className="rounded-[20px] bg-white p-7 shadow-[0_10px_28px_rgba(28,25,23,0.05)]"
+
+          <div className="flex flex-col justify-between rounded-lg bg-[#F6E9EE] p-6 sm:p-7">
+            <div>
+              <h2 className="font-serif text-xl font-semibold text-[#1C1917]">Are you a skilled technician?</h2>
+              <p className="mt-1.5 text-xs leading-relaxed text-[#5B444B]">
+                Get steady jobs in your area and clear weekly payouts across Chennai &amp; Tamil Nadu.
+              </p>
+            </div>
+            <div className="mt-5">
+              <Link
+                href="/join-as-technician"
+                className="inline-flex min-h-[42px] items-center rounded-md bg-[#800020] px-5 text-xs font-bold text-white transition hover:bg-[#5e0017]"
               >
-                <span className="font-serif text-xl font-bold text-[#C8A35B]">{num}</span>
-                <Icon size={24} strokeWidth={1.5} className="mt-4 text-[#800020]" />
-                <h3 className="mt-4 font-serif text-xl font-bold text-[#1C1917]">{title}</h3>
-                <p className="mt-2 text-sm text-[#57534E]">{desc}</p>
-              </div>
-            ))}
+                Join as a pro
+              </Link>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* 5. Single Rotating Offer Card */}
-      <OfferSpotlight banners={banners} />
-
-      {/* 6. Popular Services */}
-      <section className="section container" id="services">
-        <div className="section-heading">
+      {/* 8. Popular services (at the bottom of home page, above the footer, max 4) */}
+      <section className="container pb-14 pt-6" id="services">
+        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-4">
           <div>
-            <span className="section-kicker">POPULAR HOME CARE</span>
-            <h2>Services ready to book cleanly.</h2>
-            <p>Every visit includes clear inclusions and our 30-day rework guarantee.</p>
+            <h2 className="font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">Popular services</h2>
+            <p className="mt-1 text-xs text-[#57534E]">
+              Most booked home services with upfront pricing and a 30-day warranty.
+            </p>
           </div>
-          <Link href="/services" className="text-link">
-            View all services <ArrowRight size={16} strokeWidth={1.5} />
+          <Link href="/services" className="text-xs font-bold text-[#800020] hover:underline">
+            View all services →
           </Link>
         </div>
+
         {error ? (
           <div className="status-panel" role="alert">
             <h3>Catalog temporarily unavailable</h3>
             <p>{error}</p>
             <Link href="/services">Try the service page</Link>
           </div>
-        ) : services.length ? (
-          <div className="services-grid">
-            {services.slice(0, 8).map((service) => (
-              <ServiceCard key={service.id} service={service} />
-            ))}
-          </div>
+        ) : popularServices.length > 0 ? (
+          <ServiceCatalogGrid
+            services={popularServices}
+            gridClassName="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
+          />
         ) : (
           <div className="status-panel">
             <h3>Our catalog is being prepared</h3>
             <p>No services are published yet. Please check back soon.</p>
           </div>
         )}
-      </section>
-
-      {/* 7. Customer Reviews (Real Verified Data) */}
-      {reviews.length > 0 && (
-        <section className="section tinted-section">
-          <div className="container">
-            <div className="section-heading">
-              <div>
-                <span className="section-kicker">NEIGHBORHOOD TRUST</span>
-                <h2>Heard across Chennai homes.</h2>
-              </div>
-            </div>
-            <div className="grid gap-5 md:grid-cols-3">
-              {reviews.map((rev) => (
-                <article
-                  key={rev.id}
-                  className="flex flex-col justify-between rounded-[20px] bg-white p-6 shadow-[0_10px_28px_rgba(28,25,23,0.05)]"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[#C8A35B]/15 px-2.5 py-1 text-xs font-bold text-[#8a6823]">
-                        <Star size={12} strokeWidth={1.5} className="fill-[#C8A35B] text-[#C8A35B]" />
-                        {rev.rating}.0
-                      </span>
-                      {rev.area && (
-                        <span className="text-xs font-semibold text-[#57534E]">{rev.area}</span>
-                      )}
-                    </div>
-                    <p className="text-sm leading-relaxed text-[#1C1917]">
-                      “{rev.comment || "Smooth visit, clear communication, and tidy finish."}”
-                    </p>
-                    {rev.photo_url && resolveUploadedMediaUrl(rev.photo_url) && (
-                      <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-[#F4EFE9]">
-                        <ServiceImage src={rev.photo_url} alt={`Work done for ${rev.customer_name}`} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 border-t border-[#F4EFE9] pt-3 text-xs">
-                    <strong className="block text-[#1C1917]">{rev.customer_name}</strong>
-                    {rev.service_name && <span className="text-[#57534E]">{rev.service_name}</span>}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 8. WhatsApp Help Card */}
-      <section className="container py-10">
-        <div className="flex flex-col justify-between gap-5 rounded-[20px] bg-[#F4EFE9] p-7 sm:flex-row sm:items-center">
-          <div className="flex items-start gap-4">
-            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-700 text-white">
-              <MessageCircle size={22} strokeWidth={1.5} />
-            </span>
-            <div>
-              <h2 className="font-serif text-xl font-bold text-[#1C1917]">Not sure which service fits your issue?</h2>
-              <p className="mt-1 text-xs text-[#57534E]">
-                Tell our Chennai support desk what’s happening — we’ll guide you before you book.
-              </p>
-            </div>
-          </div>
-          <Link
-            href="/search"
-            className="inline-flex min-h-[48px] shrink-0 items-center justify-center gap-2 rounded-full bg-emerald-700 px-6 text-sm font-bold text-white transition hover:bg-emerald-800"
-          >
-            <span>Get help choosing</span>
-            <ArrowRight size={16} strokeWidth={1.5} />
-          </Link>
-        </div>
-      </section>
-
-      {/* 9. Partner Banner */}
-      <section className="partner-band">
-        <div className="container">
-          <div>
-            <span className="section-kicker">WORK WITH US</span>
-            <h2>Skilled technician? Join NammaPros.</h2>
-            <p>Steady local visits across Chennai neighborhoods, clear payouts, and respectful support.</p>
-          </div>
-          <Link className="button button-light" href="/join-as-technician">
-            Join as a pro <ArrowRight size={17} strokeWidth={1.5} />
-          </Link>
-        </div>
       </section>
     </main>
   );

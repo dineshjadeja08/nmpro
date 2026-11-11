@@ -78,6 +78,7 @@ def category_data(c):
         "description": c.description,
         "short_description": c.description,
         "image_url": c.image_display or c.image_url or "",
+        "icon_url": c.icon_display or c.icon_url or "",
         "banner_image": c.banner_image_display or c.banner_image_url or "",
         "banner_image_url": c.banner_image_url,
         "banner_title": c.banner_title,
@@ -105,6 +106,7 @@ def service_data(s):
             "inclusions": s.inclusions,
             "exclusions": s.exclusions,
             "faqs": s.faq_items,
+            "brands": s.brands or [],
             "seo_title": s.seo_title,
             "seo_description": s.seo_description,
             "banner_title": s.banner_title,
@@ -570,6 +572,7 @@ class CategoryInput(serializers.Serializer):
     name = serializers.CharField(max_length=80, required=False)
     description = serializers.CharField(max_length=240, allow_blank=True, required=False)
     image_url = serializers.CharField(max_length=500, allow_blank=True, required=False)
+    icon_url = serializers.CharField(max_length=500, allow_blank=True, required=False)
     banner_image_url = serializers.CharField(max_length=500, allow_blank=True, required=False)
     banner_title = serializers.CharField(max_length=160, allow_blank=True, required=False)
     banner_subtitle = serializers.CharField(max_length=320, allow_blank=True, required=False)
@@ -583,6 +586,11 @@ class CategoryInput(serializers.Serializer):
 class FAQItemInput(serializers.Serializer):
     question = serializers.CharField(max_length=300)
     answer = serializers.CharField(max_length=2000)
+
+
+class ServiceBrandInput(serializers.Serializer):
+    name = serializers.CharField(max_length=80)
+    logo_url = serializers.CharField(max_length=500, allow_blank=True, required=False, default="")
 
 
 class ServiceInput(serializers.Serializer):
@@ -599,6 +607,7 @@ class ServiceInput(serializers.Serializer):
     inclusions = serializers.ListField(child=serializers.CharField(max_length=300), required=False)
     exclusions = serializers.ListField(child=serializers.CharField(max_length=300), required=False)
     faqs = serializers.ListField(child=FAQItemInput(), required=False)
+    brands = serializers.ListField(child=ServiceBrandInput(), required=False)
     seo_title = serializers.CharField(max_length=160, allow_blank=True, required=False)
     seo_description = serializers.CharField(max_length=320, allow_blank=True, required=False)
     banner_title = serializers.CharField(max_length=160, allow_blank=True, required=False)
@@ -732,17 +741,18 @@ class CatalogDetailView(APIView):
         return Response(status=204)
 
 
-def _validate_and_upload_catalog_image(request):
+def _validate_and_upload_catalog_image(request, allow_svg=False):
     upload = request.FILES.get("file") or request.FILES.get("image")
     if not upload or upload.size < 1 or upload.size > 5 * 1024 * 1024:
         raise serializers.ValidationError("Choose an image under 5 MB.")
-    head = upload.read(16)
+    head = upload.read(32)
     upload.seek(0)
     mime = ("image/jpeg" if head.startswith(b"\xff\xd8\xff") else
             "image/png" if head.startswith(b"\x89PNG\r\n\x1a\n") else
-            "image/webp" if head[:4] == b"RIFF" and head[8:12] == b"WEBP" else None)
+            "image/webp" if head[:4] == b"RIFF" and head[8:12] == b"WEBP" else
+            "image/svg+xml" if allow_svg and head.lstrip().startswith((b"<svg", b"<?xml")) else None)
     if not mime:
-        raise serializers.ValidationError("Use JPG, PNG, or WebP.")
+        raise serializers.ValidationError("Use SVG, PNG, JPG, or WebP." if allow_svg else "Use JPG, PNG, or WebP.")
     c_provider = CloudinaryProvider()
     cloudinary_res = None
     if c_provider.is_configured:
@@ -762,15 +772,21 @@ class AdminCategoryImageView(APIView):
         require(request.user, "MANAGE_SERVICES")
         category = get_object_or_404(Category, id=category_id)
         slot = request.data.get("slot") or request.query_params.get("slot") or "card"
-        if slot not in ("card", "banner"):
-            raise serializers.ValidationError({"slot": "Use card or banner."})
-        upload, _, cloudinary_res = _validate_and_upload_catalog_image(request)
+        if slot not in ("card", "banner", "icon"):
+            raise serializers.ValidationError({"slot": "Use card, banner, or icon."})
+        upload, _, cloudinary_res = _validate_and_upload_catalog_image(request, allow_svg=(slot == "icon"))
         if slot == "card":
             if cloudinary_res:
                 category.image_url = cloudinary_res["secure_url"]
             category.image.save(upload.name, upload, save=False)
             category.save()
             url = category.image_display or ""
+        elif slot == "icon":
+            if cloudinary_res:
+                category.icon_url = cloudinary_res["secure_url"]
+            category.icon.save(upload.name, upload, save=False)
+            category.save()
+            url = category.icon_display or ""
         else:
             if cloudinary_res:
                 category.banner_image_url = cloudinary_res["secure_url"]
@@ -788,12 +804,16 @@ class AdminCategoryImageView(APIView):
             if category.image:
                 category.image.delete(save=False)
             category.image_url = ""
+        elif slot == "icon":
+            if category.icon:
+                category.icon.delete(save=False)
+            category.icon_url = ""
         elif slot == "banner":
             if category.banner_image:
                 category.banner_image.delete(save=False)
             category.banner_image_url = ""
         else:
-            raise serializers.ValidationError({"slot": "Use card or banner."})
+            raise serializers.ValidationError({"slot": "Use card, banner, or icon."})
         category.save()
         audit(request.user, f"CATEGORY_{slot.upper()}_IMAGE_CLEARED", "Category", category.id)
         return Response({"slot": slot, "url": ""})

@@ -20,11 +20,12 @@ import {
   Sun,
   Sunrise,
   Sunset,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { getPackageUnitPaise, pickDefaultPackage } from "@/components/booking-cart-provider";
+import { getPackageUnitPaise, pickDefaultPackage, useBookingCart } from "@/components/booking-cart-provider";
 import { GoogleMapsLocationPicker, type PickedLocationResult } from "@/components/google-maps-location-picker";
 import { useServiceLocation } from "@/components/location-provider";
 import { QuickOtpSheet } from "@/components/quick-otp-sheet";
@@ -173,6 +174,7 @@ export function SlotFirstCheckout({
   onBookingCompleted?: (booking: Booking) => void;
 }) {
   const { location: headerLocation } = useServiceLocation();
+  const { items: cartItems, addToCart, updateItemQuantity, removeItem } = useBookingCart();
 
   const availableServices = useMemo(() => {
     if (services && services.length > 0) return services;
@@ -371,8 +373,26 @@ export function SlotFirstCheckout({
     ].filter((g) => g.items.length > 0);
   }, [daySlots]);
 
+  const activeCartItems = useMemo(() => {
+    if (cartItems.length > 0) return cartItems;
+    if (selectedService && selectedPackage) {
+      return [{ service: selectedService, pkg: selectedPackage, quantity, problemDescription: problem }];
+    }
+    return [];
+  }, [cartItems, selectedService, selectedPackage, quantity, problem]);
+
   const unitPaise = selectedService ? getPackageUnitPaise(selectedService, selectedPackage) : null;
-  const estimatedTotalPaise = quote ? quote.total_paise : unitPaise != null ? unitPaise * quantity : null;
+  const cartTotalPaise = activeCartItems.reduce(
+    (sum, item) => sum + (getPackageUnitPaise(item.service, item.pkg) ?? 0) * item.quantity,
+    0
+  );
+  const estimatedTotalPaise = quote
+    ? quote.total_paise
+    : activeCartItems.length > 0
+      ? cartTotalPaise
+      : unitPaise != null
+        ? unitPaise * quantity
+        : null;
   const dueNowPaise = quote
     ? quote.payment_policy === "ADVANCE"
       ? quote.advance_paise ?? quote.total_paise
@@ -501,7 +521,11 @@ export function SlotFirstCheckout({
       const nextHold = await bookingApi.hold(selectedPackage.id, addr.id, matchingSlot.id);
       setSelectedSlot(matchingSlot);
       setHold(nextHold);
-      const nextQuote = await bookingApi.quote(nextHold.id);
+      const quoteItemsPayload =
+        activeCartItems.length > 1 || (activeCartItems[0]?.quantity ?? 1) > 1
+          ? activeCartItems.map((ci) => ({ package_id: ci.pkg.id, quantity: ci.quantity }))
+          : undefined;
+      const nextQuote = await bookingApi.quote(nextHold.id, quoteItemsPayload);
       setQuote(nextQuote);
       setIdempotencyKey(typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `np-${Date.now()}`);
       setMessage("");
@@ -653,8 +677,8 @@ export function SlotFirstCheckout({
     return (
       <div className="space-y-5 p-1">
         {awaitingPayment ? (
-          <div className="rounded-[20px] border border-amber-200 bg-amber-50/80 p-6 text-center">
-            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-amber-600 text-white">
+          <div className="rounded-lg border border-amber-200 bg-amber-50/80 p-6 text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-md bg-amber-600 text-white">
               <CreditCard size={26} strokeWidth={1.75} />
             </div>
             <span className="text-[11px] font-bold uppercase tracking-widest text-amber-800">
@@ -672,7 +696,7 @@ export function SlotFirstCheckout({
               Booking ID: <strong className="font-mono text-[#1C1917]">{confirmedBooking.reference}</strong>
             </p>
             {paymentPendingNote && (
-              <p className="mt-2 rounded-xl bg-white/80 px-3 py-2 text-xs font-semibold text-amber-900">
+              <p className="mt-2 rounded-md bg-white/80 px-3 py-2 text-xs font-semibold text-amber-900">
                 {paymentPendingNote}
               </p>
             )}
@@ -682,7 +706,7 @@ export function SlotFirstCheckout({
                   type="button"
                   disabled={busy}
                   onClick={() => void launchRazorpayForBooking(confirmedBooking)}
-                  className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-full bg-[#800020] px-5 text-sm font-bold text-white hover:bg-[#5e0017] disabled:opacity-50"
+                  className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-md bg-[#800020] px-5 text-sm font-bold text-white hover:bg-[#5e0017] disabled:opacity-50"
                 >
                   <CreditCard size={16} strokeWidth={1.75} />
                   <span>{busy ? "Processing..." : `Pay ${formatRupees(payNowPaise)} now`}</span>
@@ -692,7 +716,7 @@ export function SlotFirstCheckout({
                 type="button"
                 disabled={busy}
                 onClick={() => void refreshConfirmedStatus()}
-                className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-full border border-[#D6CEC6] bg-white px-5 text-sm font-bold text-[#1C1917] hover:border-[#800020] disabled:opacity-50"
+                className="inline-flex min-h-[46px] flex-1 items-center justify-center gap-2 rounded-md border border-[#D6CEC6] bg-white px-5 text-sm font-bold text-[#1C1917] hover:border-[#800020] disabled:opacity-50"
               >
                 <RefreshCw size={15} strokeWidth={1.75} />
                 <span>Refresh payment status</span>
@@ -700,8 +724,8 @@ export function SlotFirstCheckout({
             </div>
           </div>
         ) : (
-          <div className="rounded-[20px] border border-emerald-200 bg-emerald-50/70 p-6 text-center">
-            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full bg-emerald-600 text-white animate-[popInOnce_.32s_ease-out]">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-6 text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-md bg-emerald-600 text-white animate-[popInOnce_.32s_ease-out]">
               <CheckCircle2 size={28} strokeWidth={1.75} />
             </div>
             <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-800">
@@ -716,10 +740,24 @@ export function SlotFirstCheckout({
           </div>
         )}
 
-        <div className="rounded-[18px] bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)] space-y-3 text-sm">
+        <div className="rounded-lg bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)] space-y-3 text-sm">
           <div className="flex justify-between gap-4 border-b border-[#E8E1DB] pb-2.5">
-            <span className="text-[#57534E]">Service</span>
-            <strong className="text-right text-[#1C1917]">{confirmedBooking.service} · {confirmedBooking.package}</strong>
+            <span className="text-[#57534E]">
+              {confirmedBooking.items && confirmedBooking.items.length > 1 ? "Services" : "Service"}
+            </span>
+            <div className="text-right">
+              {confirmedBooking.items && confirmedBooking.items.length > 1 ? (
+                <ul className="space-y-1">
+                  {confirmedBooking.items.map((it) => (
+                    <li key={it.package_id} className="font-bold text-[#1C1917]">
+                      {it.service} · {it.package} × {it.quantity}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <strong className="text-[#1C1917]">{confirmedBooking.service} · {confirmedBooking.package}</strong>
+              )}
+            </div>
           </div>
           <div className="flex justify-between gap-4 border-b border-[#E8E1DB] pb-2.5">
             <span className="text-[#57534E]">When</span>
@@ -734,8 +772,8 @@ export function SlotFirstCheckout({
         </div>
 
         {confirmedBooking.technician && (
-          <div className="flex items-center gap-3.5 rounded-[18px] bg-white p-4 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-[#f5ebe8] text-[#800020] font-bold">
+          <div className="flex items-center gap-3.5 rounded-lg bg-white p-4 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#f5ebe8] text-[#800020] font-bold">
               <UserRound size={20} strokeWidth={1.5} />
             </div>
             <div>
@@ -745,7 +783,7 @@ export function SlotFirstCheckout({
           </div>
         )}
 
-        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[16px] bg-white p-4 shadow-[0_4px_16px_rgba(28,25,23,0.04)]">
+        <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg bg-white p-4 shadow-[0_4px_16px_rgba(28,25,23,0.04)]">
           <span className="flex items-center gap-2.5 text-sm font-medium text-[#1C1917]">
             <MessageCircle size={18} strokeWidth={1.5} className="text-emerald-700" />
             <span>Send slot & pro arrival updates on WhatsApp</span>
@@ -763,7 +801,7 @@ export function SlotFirstCheckout({
           <button
             type="button"
             onClick={() => downloadCalendarIcs(confirmedBooking)}
-            className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full border border-[#D6CEC6] bg-white px-5 text-sm font-bold text-[#1C1917] hover:border-[#800020]"
+            className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md border border-[#D6CEC6] bg-white px-5 text-sm font-bold text-[#1C1917] hover:border-[#800020]"
           >
             <CalendarPlus size={16} strokeWidth={1.5} className="text-[#800020]" />
             <span>Add to calendar</span>
@@ -771,7 +809,7 @@ export function SlotFirstCheckout({
           <Link
             href={`/bookings/${confirmedBooking.id}?confirmed=1`}
             onClick={onCloseSheet}
-            className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-full bg-[#800020] px-5 text-sm font-bold text-white hover:bg-[#5e0017]"
+            className="inline-flex min-h-[48px] flex-1 items-center justify-center gap-2 rounded-md bg-[#800020] px-5 text-sm font-bold text-white hover:bg-[#5e0017]"
           >
             <span>Track your booking</span>
             <ArrowRight size={16} strokeWidth={1.5} />
@@ -795,7 +833,7 @@ export function SlotFirstCheckout({
               className="text-left disabled:cursor-default"
             >
               <div
-                className={`h-1.5 w-full rounded-full transition-colors ${
+                className={`h-1.5 w-full rounded-md transition-colors ${
                   idx <= step ? "bg-[#800020]" : "bg-[#E8E1DB]"
                 }`}
               />
@@ -814,7 +852,7 @@ export function SlotFirstCheckout({
       {message && (
         <div
           role="alert"
-          className="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs font-semibold text-amber-950"
+          className="rounded-lg border border-amber-200 bg-amber-50/90 px-4 py-3 text-xs font-semibold text-amber-950"
         >
           {message}
         </div>
@@ -823,9 +861,91 @@ export function SlotFirstCheckout({
       <div className={compactSheet ? "space-y-5" : "grid gap-7 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start"}>
         {/* Left Main Workspace */}
         <div className="space-y-5">
-          {/* Selected Item Summary Strip */}
-          {selectedService && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] bg-white p-4 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
+          {/* Multi-Service Cart Strip (PurpleSquad-style) */}
+          {cartItems.length > 0 && step === 0 ? (
+            <div className="rounded-lg border border-[#E8E1DB] bg-white p-4 shadow-[0_6px_24px_rgba(28,25,23,0.05)] space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#800020]">
+                  Selected services ({cartItems.reduce((s, i) => s + i.quantity, 0)})
+                </span>
+                {compactSheet ? (
+                  <Link
+                    href="/services"
+                    onClick={onCloseSheet}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#800020] hover:underline"
+                  >
+                    <Plus size={13} strokeWidth={2} /> Add another service
+                  </Link>
+                ) : (
+                  availableServices.length > 1 &&
+                  selectedService &&
+                  selectedPackage && (
+                    <button
+                      type="button"
+                      onClick={() => addToCart(selectedService, selectedPackage, 1, "", false)}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-[#800020] hover:underline"
+                    >
+                      <Plus size={13} strokeWidth={2} /> Add selected service
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="divide-y divide-[#F4EFE9]">
+                {cartItems.map((ci) => {
+                  const ciUnit = getPackageUnitPaise(ci.service, ci.pkg);
+                  return (
+                    <div key={ci.pkg.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-serif text-sm font-bold text-[#1C1917]">{ci.service.name}</p>
+                        <p className="truncate text-xs text-[#57534E]">
+                          {ci.pkg.name} · {ci.pkg.duration_minutes ?? 60} min
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2.5">
+                        <div className="inline-flex items-center rounded-md border border-[#E8E1DB] bg-[#FBF8F5]">
+                          <button
+                            type="button"
+                            aria-label={`Decrease ${ci.pkg.name}`}
+                            onClick={() => updateItemQuantity(ci.pkg.id, ci.quantity - 1)}
+                            className="grid h-8 w-8 place-items-center text-[#800020]"
+                          >
+                            <Minus size={13} strokeWidth={1.75} />
+                          </button>
+                          <span className="min-w-[18px] text-center text-xs font-bold text-[#1C1917]">{ci.quantity}</span>
+                          <button
+                            type="button"
+                            aria-label={`Increase ${ci.pkg.name}`}
+                            onClick={() => updateItemQuantity(ci.pkg.id, ci.quantity + 1)}
+                            className="grid h-8 w-8 place-items-center text-[#800020]"
+                          >
+                            <Plus size={13} strokeWidth={1.75} />
+                          </button>
+                        </div>
+                        {ciUnit != null && (
+                          <strong className="min-w-[54px] text-right text-xs font-bold text-[#1C1917]">
+                            {formatRupees(ciUnit * ci.quantity)}
+                          </strong>
+                        )}
+                        {cartItems.length > 1 && (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${ci.pkg.name}`}
+                            onClick={() => removeItem(ci.pkg.id)}
+                            className="p-1 text-[#78716C] hover:text-red-700"
+                          >
+                            <Trash2 size={14} strokeWidth={1.5} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            selectedService && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-white p-4 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
               <div className="min-w-0 flex-1">
                 {availableServices.length > 1 && step === 0 ? (
                   <div className="space-y-2">
@@ -841,7 +961,7 @@ export function SlotFirstCheckout({
                         setSelectedPackageId(next ? pickDefaultPackage(next)?.id ?? "" : "");
                         setSelectedSlot(null);
                       }}
-                      className="min-h-[44px] w-full rounded-xl border border-[#E8E1DB] bg-[#FBF8F5] px-3 text-sm font-semibold text-[#1C1917]"
+                      className="min-h-[44px] w-full rounded-md border border-[#E8E1DB] bg-[#FBF8F5] px-3 text-sm font-semibold text-[#1C1917]"
                     >
                       {availableServices.map((s) => (
                         <option key={s.id} value={s.slug}>
@@ -869,7 +989,7 @@ export function SlotFirstCheckout({
                           setSelectedPackageId(p.id);
                           setSelectedSlot(null);
                         }}
-                        className={`min-h-[38px] rounded-full px-3.5 text-xs font-semibold transition ${
+                        className={`min-h-[38px] rounded-md px-3.5 text-xs font-semibold transition ${
                           selectedPackage?.id === p.id
                             ? "bg-[#800020] text-white"
                             : "bg-[#F4EFE9] text-[#1C1917] hover:bg-[#e9dfd6]"
@@ -880,10 +1000,20 @@ export function SlotFirstCheckout({
                     ))}
                   </div>
                 )}
+
+                {availableServices.length > 1 && step === 0 && selectedService && selectedPackage && (
+                  <button
+                    type="button"
+                    onClick={() => addToCart(selectedService, selectedPackage, quantity, "", false)}
+                    className="mt-2.5 inline-flex items-center gap-1 text-xs font-bold text-[#800020] hover:underline"
+                  >
+                    <Plus size={13} strokeWidth={2} /> Add to cart &amp; pick another service
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
-                <div className="inline-flex items-center rounded-full border border-[#E8E1DB] bg-[#FBF8F5]">
+                <div className="inline-flex items-center rounded-md border border-[#E8E1DB] bg-[#FBF8F5]">
                   <button
                     type="button"
                     aria-label="Decrease quantity"
@@ -909,11 +1039,12 @@ export function SlotFirstCheckout({
                 )}
               </div>
             </div>
+            )
           )}
 
           {/* STEP 0: SLOT FIRST */}
           {step === 0 && (
-            <section className="space-y-5 rounded-[20px] bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
+            <section className="space-y-5 rounded-lg bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
               <div>
                 <h2 className="font-serif text-xl font-bold text-[#1C1917]">When should our pro visit?</h2>
                 <p className="mt-1 text-xs text-[#57534E]">
@@ -925,18 +1056,18 @@ export function SlotFirstCheckout({
               {slotsLoading ? (
                 <div className="space-y-3" aria-label="Loading slots">
                   <div className="flex gap-2">
-                    <span className="ui-skeleton h-11 w-24 rounded-full" />
-                    <span className="ui-skeleton h-11 w-24 rounded-full" />
-                    <span className="ui-skeleton h-11 w-24 rounded-full" />
+                    <span className="ui-skeleton h-11 w-24 rounded-md" />
+                    <span className="ui-skeleton h-11 w-24 rounded-md" />
+                    <span className="ui-skeleton h-11 w-24 rounded-md" />
                   </div>
                   <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-                    <span className="ui-skeleton h-12 rounded-xl" />
-                    <span className="ui-skeleton h-12 rounded-xl" />
-                    <span className="ui-skeleton h-12 rounded-xl" />
+                    <span className="ui-skeleton h-12 rounded-md" />
+                    <span className="ui-skeleton h-12 rounded-md" />
+                    <span className="ui-skeleton h-12 rounded-md" />
                   </div>
                 </div>
               ) : dayChips.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#D6CEC6] bg-[#FBF8F5] p-5 text-sm text-[#57534E]">
+                <div className="rounded-lg border border-dashed border-[#D6CEC6] bg-[#FBF8F5] p-5 text-sm text-[#57534E]">
                   <p className="font-semibold text-[#1C1917]">No open visit windows found yet for this selection.</p>
                   <p className="mt-1 text-xs">
                     Try another day after choosing your address, or pick another package.
@@ -945,7 +1076,7 @@ export function SlotFirstCheckout({
                     <button
                       type="button"
                       onClick={() => setOtpModalOpen(true)}
-                      className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-[#800020] px-4 text-xs font-bold text-white"
+                      className="mt-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-md bg-[#800020] px-4 text-xs font-bold text-white"
                     >
                       Check with your saved address <ArrowRight size={14} strokeWidth={1.5} />
                     </button>
@@ -967,7 +1098,7 @@ export function SlotFirstCheckout({
                             setSelectedDay(day);
                             setSelectedSlot(null);
                           }}
-                          className={`min-h-[48px] shrink-0 rounded-full px-4 text-xs font-bold transition ${
+                          className={`min-h-[48px] shrink-0 rounded-md px-4 text-xs font-bold transition ${
                             active
                               ? "bg-[#800020] text-white shadow-sm"
                               : "bg-[#F4EFE9] text-[#1C1917] hover:bg-[#eae2d9]"
@@ -998,7 +1129,7 @@ export function SlotFirstCheckout({
                                 disabled={full}
                                 aria-pressed={chosen}
                                 onClick={() => setSelectedSlot(slot)}
-                                className={`min-h-[48px] rounded-2xl px-3 py-2.5 text-center text-xs font-bold transition ${
+                                className={`min-h-[48px] rounded-lg px-3 py-2.5 text-center text-xs font-bold transition ${
                                   full
                                     ? "bg-stone-100 text-stone-400 line-through cursor-not-allowed"
                                     : chosen
@@ -1031,7 +1162,7 @@ export function SlotFirstCheckout({
                   value={problem}
                   onChange={(e) => setProblem(e.target.value)}
                   placeholder="E.g. Bedroom split AC not cooling well"
-                  className="min-h-[48px] w-full rounded-2xl border border-[#E8E1DB] bg-[#FBF8F5] px-4 text-sm text-[#1C1917] outline-none focus:border-[#800020]"
+                  className="min-h-[48px] w-full rounded-lg border border-[#E8E1DB] bg-[#FBF8F5] px-4 text-sm text-[#1C1917] outline-none focus:border-[#800020]"
                 />
               </div>
 
@@ -1040,7 +1171,7 @@ export function SlotFirstCheckout({
                   type="button"
                   disabled={!selectedSlot || busy}
                   onClick={() => void continueFromSlot()}
-                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-45"
+                  className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-45"
                 >
                   <span>Continue to address</span>
                   <ArrowRight size={16} strokeWidth={1.5} />
@@ -1051,7 +1182,7 @@ export function SlotFirstCheckout({
 
           {/* STEP 1: ADDRESS */}
           {step === 1 && (
-            <section className="space-y-5 rounded-[20px] bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
+            <section className="space-y-5 rounded-lg bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="font-serif text-xl font-bold text-[#1C1917]">Where should we visit?</h2>
@@ -1076,14 +1207,14 @@ export function SlotFirstCheckout({
                           type="button"
                           aria-pressed={active}
                           onClick={() => setSelectedAddress(item)}
-                          className={`flex-1 rounded-2xl border p-3.5 text-left text-xs transition min-h-[48px] ${
+                          className={`flex-1 rounded-lg border p-3.5 text-left text-xs transition min-h-[48px] ${
                             active
                               ? "border-[#800020] bg-[#f5ebe8] text-[#1C1917]"
                               : "border-[#E8E1DB] bg-[#FBF8F5] text-[#1C1917] hover:border-[#800020]/50"
                           }`}
                         >
                           <div className="flex items-center gap-2">
-                            <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#800020]">
+                            <span className="rounded-md bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#800020]">
                               {item.label}
                             </span>
                             {item.is_default && <span className="text-[10px] text-[#57534E]">Default</span>}
@@ -1096,7 +1227,7 @@ export function SlotFirstCheckout({
                           type="button"
                           onClick={() => startEditAddress(item)}
                           aria-label={`Edit ${item.label} address`}
-                          className="inline-flex min-h-[48px] items-center gap-1 rounded-2xl border border-[#E8E1DB] bg-white px-3 text-xs font-bold text-[#800020] hover:bg-[#f5ebe8]"
+                          className="inline-flex min-h-[48px] items-center gap-1 rounded-lg border border-[#E8E1DB] bg-white px-3 text-xs font-bold text-[#800020] hover:bg-[#f5ebe8]"
                         >
                           <Pencil size={13} strokeWidth={1.5} /> Edit
                         </button>
@@ -1114,12 +1245,12 @@ export function SlotFirstCheckout({
                     setAddressForm(EMPTY_ADDRESS);
                     setShowAddressForm(true);
                   }}
-                  className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-[#CBBFBB] bg-[#FBF8F5] text-xs font-bold text-[#800020] hover:border-[#800020]"
+                  className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#CBBFBB] bg-[#FBF8F5] text-xs font-bold text-[#800020] hover:border-[#800020]"
                 >
                   <Plus size={15} strokeWidth={1.5} /> Add a new address
                 </button>
               ) : (
-                <div className="space-y-4 rounded-2xl border border-[#E8E1DB] bg-[#FBF8F5] p-4">
+                <div className="space-y-4 rounded-lg border border-[#E8E1DB] bg-[#FBF8F5] p-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-bold text-[#1C1917]">
                       {editingAddressId ? "Update saved address" : "Add service address"}
@@ -1145,7 +1276,7 @@ export function SlotFirstCheckout({
                         key={lbl}
                         type="button"
                         onClick={() => setAddressForm((f) => ({ ...f, label: lbl }))}
-                        className={`min-h-[40px] rounded-full px-4 text-xs font-bold transition ${
+                        className={`min-h-[40px] rounded-md px-4 text-xs font-bold transition ${
                           addressForm.label === lbl
                             ? "bg-[#800020] text-white"
                             : "border border-[#E8E1DB] bg-white text-[#1C1917]"
@@ -1172,38 +1303,38 @@ export function SlotFirstCheckout({
                       placeholder="Contact name *"
                       value={addressForm.contact_name}
                       onChange={(e) => setAddressForm((f) => ({ ...f, contact_name: e.target.value }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                     <input
                       placeholder="House / Flat No. *"
                       value={addressForm.house_flat}
                       onChange={(e) => setAddressForm((f) => ({ ...f, house_flat: e.target.value }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                     <input
                       placeholder="Street / Building *"
                       value={addressForm.street}
                       onChange={(e) => setAddressForm((f) => ({ ...f, street: e.target.value }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                     <input
                       placeholder="Area / Locality *"
                       value={addressForm.locality}
                       onChange={(e) => setAddressForm((f) => ({ ...f, locality: e.target.value }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                     <input
                       placeholder="City *"
                       value={addressForm.city}
                       onChange={(e) => setAddressForm((f) => ({ ...f, city: e.target.value }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                     <input
                       placeholder="6-digit PIN code *"
                       maxLength={6}
                       value={addressForm.postal_code}
                       onChange={(e) => setAddressForm((f) => ({ ...f, postal_code: e.target.value.replace(/\D/g, "").slice(0, 6) }))}
-                      className="min-h-[46px] rounded-xl border border-[#D6CEC6] bg-white px-3.5 text-sm"
+                      className="min-h-[46px] rounded-md border border-[#D6CEC6] bg-white px-3.5 text-sm"
                     />
                   </div>
 
@@ -1211,7 +1342,7 @@ export function SlotFirstCheckout({
                     type="button"
                     disabled={busy}
                     onClick={() => void saveAddressForm()}
-                    className="min-h-[46px] rounded-full bg-[#1C1917] px-5 text-xs font-bold text-white hover:bg-black disabled:opacity-50"
+                    className="min-h-[46px] rounded-md bg-[#1C1917] px-5 text-xs font-bold text-white hover:bg-black disabled:opacity-50"
                   >
                     {busy ? "Saving..." : editingAddressId ? "Save updated address" : "Save address"}
                   </button>
@@ -1222,7 +1353,7 @@ export function SlotFirstCheckout({
                 type="button"
                 disabled={!selectedAddress || busy}
                 onClick={() => void prepareReview()}
-                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-45"
+                className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-sm font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:opacity-45"
               >
                 <span>{busy ? "Hold on, saving your slot..." : "Continue to review"}</span>
                 <ArrowRight size={16} strokeWidth={1.5} />
@@ -1232,7 +1363,7 @@ export function SlotFirstCheckout({
 
           {/* STEP 2: CONFIRM & PAY */}
           {step === 2 && quote && selectedSlot && selectedAddress && (
-            <section className="space-y-5 rounded-[20px] bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
+            <section className="space-y-5 rounded-lg bg-white p-5 shadow-[0_6px_24px_rgba(28,25,23,0.05)]">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="font-serif text-xl font-bold text-[#1C1917]">Review & confirm</h2>
@@ -1247,14 +1378,26 @@ export function SlotFirstCheckout({
                 </button>
               </div>
 
-              <div className="space-y-3 rounded-2xl bg-[#FBF8F5] p-4 text-sm">
+              <div className="space-y-3 rounded-lg bg-[#FBF8F5] p-4 text-sm">
                 <div className="flex items-start justify-between gap-3 border-b border-[#E8E1DB] pb-3">
                   <span className="flex items-center gap-1.5 text-xs font-semibold text-[#57534E]">
-                    <Sparkles size={14} strokeWidth={1.5} className="text-[#800020]" /> Service
+                    <Sparkles size={14} strokeWidth={1.5} className="text-[#800020]" />{" "}
+                    {activeCartItems.length > 1 ? "Services" : "Service"}
                   </span>
-                  <div className="text-right">
-                    <p className="font-bold text-[#1C1917]">{selectedService?.name}</p>
-                    <p className="text-xs text-[#57534E]">{selectedPackage?.name} × {quantity}</p>
+                  <div className="text-right space-y-1">
+                    {activeCartItems.length > 1 ? (
+                      activeCartItems.map((ci) => (
+                        <div key={ci.pkg.id}>
+                          <p className="font-bold text-[#1C1917]">{ci.service.name}</p>
+                          <p className="text-xs text-[#57534E]">{ci.pkg.name} × {ci.quantity}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <>
+                        <p className="font-bold text-[#1C1917]">{selectedService?.name}</p>
+                        <p className="text-xs text-[#57534E]">{selectedPackage?.name} × {quantity}</p>
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1278,9 +1421,9 @@ export function SlotFirstCheckout({
                 <div className="space-y-1.5 pt-1 text-xs">
                   {quote.lines
                     .filter((l) => l.amount_paise > 0)
-                    .map((line) => (
-                      <div key={line.code} className="flex justify-between text-[#57534E]">
-                        <span className="capitalize">{line.code.toLowerCase().replaceAll("_", " ")}</span>
+                    .map((line, idx) => (
+                      <div key={`${line.code}-${line.package_id ?? idx}`} className="flex justify-between text-[#57534E]">
+                        <span>{line.name || line.code.toLowerCase().replaceAll("_", " ")}</span>
                         <span>{formatRupees(line.amount_paise)}</span>
                       </div>
                     ))}
@@ -1311,7 +1454,7 @@ export function SlotFirstCheckout({
                 type="button"
                 disabled={busy || !termsAccepted}
                 onClick={() => void handleConfirmBooking()}
-                className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-full bg-[#800020] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[#5e0017] disabled:opacity-45"
+                className="flex min-h-[50px] w-full items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[#5e0017] disabled:opacity-45"
               >
                 <Check size={16} strokeWidth={2} />
                 <span>
@@ -1328,22 +1471,54 @@ export function SlotFirstCheckout({
 
         {/* Desktop Running Price Summary Sidebar */}
         {!compactSheet && (
-          <aside className="rounded-[20px] bg-white p-5 shadow-[0_10px_30px_rgba(28,25,23,0.06)] lg:sticky lg:top-6 space-y-4">
+          <aside className="rounded-lg bg-white p-5 shadow-[0_10px_30px_rgba(28,25,23,0.06)] lg:sticky lg:top-6 space-y-4">
             {selectedService && serviceHeroImage(selectedService) && (
-              <div className="relative aspect-[16/9] w-full overflow-hidden rounded-2xl">
-                <ServiceImage src={serviceHeroImage(selectedService)} alt={selectedService.name} />
+              <div className="relative aspect-[16/7] w-full overflow-hidden rounded-md bg-[#FAF6F2]">
+                <ServiceImage src={serviceHeroImage(selectedService)} alt={selectedService.name} fit="contain" />
               </div>
             )}
             <h3 className="font-serif text-lg font-bold text-[#1C1917]">Booking summary</h3>
             <dl className="space-y-2.5 text-xs">
-              <div className="flex justify-between gap-2">
-                <dt className="text-[#57534E]">Service</dt>
-                <dd className="text-right font-bold text-[#1C1917]">{selectedService?.name ?? "Choose service"}</dd>
-              </div>
-              <div className="flex justify-between gap-2">
-                <dt className="text-[#57534E]">Package</dt>
-                <dd className="text-right font-semibold text-[#1C1917]">{selectedPackage?.name ?? "Select option"}</dd>
-              </div>
+              {activeCartItems.length > 1 ? (
+                <div className="space-y-2 border-b border-[#E8E1DB] pb-2.5">
+                  <dt className="font-semibold text-[#57534E]">
+                    Services ({activeCartItems.reduce((sum, item) => sum + item.quantity, 0)} items)
+                  </dt>
+                  {activeCartItems.map((entry) => {
+                    const lineUnit = getPackageUnitPaise(entry.service, entry.pkg);
+                    return (
+                      <dd key={entry.pkg.id} className="flex items-start justify-between gap-2 text-[#1C1917]">
+                        <span className="min-w-0">
+                          <span className="block font-bold">{entry.service.name}</span>
+                          <span className="text-[11px] text-[#57534E]">
+                            {entry.pkg.name} × {entry.quantity}
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-semibold tabular-nums">
+                          {lineUnit != null ? formatRupees(lineUnit * entry.quantity) : "Quote"}
+                        </span>
+                      </dd>
+                    );
+                  })}
+                </div>
+              ) : (
+                <>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[#57534E]">Service</dt>
+                    <dd className="text-right font-bold text-[#1C1917]">
+                      {activeCartItems[0]?.service.name ?? selectedService?.name ?? "Choose service"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <dt className="text-[#57534E]">Package</dt>
+                    <dd className="text-right font-semibold text-[#1C1917]">
+                      {activeCartItems[0]
+                        ? `${activeCartItems[0].pkg.name}${activeCartItems[0].quantity > 1 ? ` × ${activeCartItems[0].quantity}` : ""}`
+                        : selectedPackage?.name ?? "Select option"}
+                    </dd>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between gap-2">
                 <dt className="text-[#57534E]">When</dt>
                 <dd className="text-right font-semibold text-[#1C1917]">
@@ -1365,7 +1540,7 @@ export function SlotFirstCheckout({
                 </dd>
               </div>
             </dl>
-            <p className="flex items-center gap-1.5 rounded-xl bg-[#F4EFE9] px-3 py-2 text-[11px] font-medium text-[#57534E]">
+            <p className="flex items-center gap-1.5 rounded-md bg-[#F4EFE9] px-3 py-2 text-[11px] font-medium text-[#57534E]">
               <ShieldCheck size={14} strokeWidth={1.5} className="shrink-0 text-[#800020]" />
               <span>30-day service warranty · Verified pros</span>
             </p>

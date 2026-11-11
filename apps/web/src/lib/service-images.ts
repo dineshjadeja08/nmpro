@@ -21,6 +21,9 @@ export function resolveUploadedMediaUrl(src: string | null | undefined): string 
   if (clean.startsWith("http://") || clean.startsWith("https://")) {
     return clean;
   }
+  if (clean.startsWith("/images/")) {
+    return clean;
+  }
   if (clean.startsWith("/")) {
     return `${API_ORIGIN}${clean}`;
   }
@@ -40,19 +43,25 @@ export function serviceHeroImage(service: ServiceImageFields): string | null {
 }
 
 export function serviceListImage(service: ServiceImageFields): string | null {
-  return resolveUploadedMediaUrl(service.list_image || service.main_image || service.cover_image);
+  return resolveUploadedMediaUrl(service.list_image || service.cover_image || service.main_image);
 }
 
 export function servicePopupCoverImage(service: ServiceImageFields): string | null {
-  return resolveUploadedMediaUrl(service.popup_cover_image || service.banner_image || service.landing_thumbnail || service.main_image || service.cover_image);
+  return resolveUploadedMediaUrl(
+    service.popup_cover_image || service.cover_image || service.main_image || service.landing_thumbnail || service.banner_image
+  );
 }
 
 export function servicePopupContentImage(service: ServiceImageFields): string | null {
-  return resolveUploadedMediaUrl(service.popup_content_image || service.main_image || service.cover_image);
+  return resolveUploadedMediaUrl(service.popup_content_image || service.cover_image || service.main_image);
 }
 
 export function getCategoryVisualSrc(category: { image_url?: string | null }): string | null {
   return resolveUploadedMediaUrl(category.image_url);
+}
+
+export function getCategoryIconSrc(category: { icon_url?: string | null }): string | null {
+  return resolveUploadedMediaUrl(category.icon_url);
 }
 
 export function getCategoryBannerSrc(category: { banner_image?: string | null }): string | null {

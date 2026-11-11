@@ -3,7 +3,28 @@ export type Address = { id: string; line_1: string; label: string; contact_name:
 export type Slot = { id: string; start_at: string; end_at: string; remaining: number; version: number };
 export type Hold = { id: string; expires_at: string };
 export type NotificationPreferences = { whatsapp_opt_in: boolean; sms_opt_in: boolean; email_opt_in: boolean };
-export type Quote = { id: string; hold_id: string; expires_at: string; lines: { code: string; amount_paise: number }[]; total_paise: number; advance_paise?: number; remaining_balance_paise?: number; currency: string; pricing_policy_id: string; pricing_version: number; payment_policy: "PREPAID" | "PAY_AT_VISIT" | "ADVANCE"; advance_type?: string; advance_percentage?: number };
+export type Quote = {
+  id: string;
+  hold_id: string;
+  expires_at: string;
+  lines: {
+    code: string;
+    name?: string;
+    package_id?: string;
+    quantity?: number;
+    unit_paise?: number;
+    amount_paise: number;
+  }[];
+  total_paise: number;
+  advance_paise?: number;
+  remaining_balance_paise?: number;
+  currency: string;
+  pricing_policy_id: string;
+  pricing_version: number;
+  payment_policy: "PREPAID" | "PAY_AT_VISIT" | "ADVANCE";
+  advance_type?: string;
+  advance_percentage?: number;
+};
 export type LocationSuggestion = { id: string; description: string; main_text: string; secondary_text: string };
 export type ResolvedLocation = { formatted_address: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; latitude: number | null; longitude: number | null };
 export type ServiceAreaInfo = { id: string; name: string; city: string; state: string; postal_code: string };
@@ -34,6 +55,7 @@ export type Booking = {
   package: string;
   package_id: string;
   address_id: string;
+  items?: { service: string; package: string; package_id: string; quantity: number }[];
   can_cancel: boolean;
   can_reschedule: boolean;
   address: { label: string; line_1: string; locality: string; city: string; postal_code: string };
@@ -110,6 +132,9 @@ export const bookingApi = {
   firebaseAuth: async (idToken: string) => {
     const result = await bookingRequest<{ id: number; phone_e164: string }>("/auth/firebase/", "POST", { id_token: idToken });
     await refreshCsrf();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("nammapros:auth-changed"));
+    }
     return result;
   },
   logout: async () => { const result = await bookingRequest<void>("/auth/logout/", "POST"); csrfToken = ""; return result; },
@@ -130,8 +155,15 @@ export const bookingApi = {
   },
   hold: (package_id: string, address_id: string, slot_id: string) => bookingRequest<Hold>("/checkout/holds/", "POST", { package_id, address_id, slot_id }),
   release: (id: string) => bookingRequest<void>(`/checkout/holds/${id}/`, "DELETE"),
-  quote: (hold_id: string) => bookingRequest<Quote>("/checkout/quote/", "POST", { hold_id }),
+  quote: (hold_id: string, items?: Array<{ package_id: string; quantity: number }>) =>
+    bookingRequest<Quote>("/checkout/quote/", "POST", items && items.length > 0 ? { hold_id, items } : { hold_id }),
   confirm: (hold_id: string, quote_id: string, accepted_total_paise: number, key: string, problem_description = "") => bookingRequest<Booking>("/bookings/", "POST", { hold_id, quote_id, accepted_total_paise, terms_accepted: true, problem_description }, key),
+  cart: () => bookingRequest<{ id: string; items: Array<{ id: string; service_id: string; service_slug: string; service_name: string; package_id: string | null; package_name: string | null; quantity: number }> }>("/cart/"),
+  putCartItem: (serviceId: string, packageId: string, quantity: number) =>
+    bookingRequest<{ id: string; items: unknown[] }>(`/cart/items/${encodeURIComponent(serviceId)}/`, "PUT", { package_id: packageId, quantity }),
+  deleteCartItem: (serviceId: string, packageId?: string) =>
+    bookingRequest<void>(`/cart/items/${encodeURIComponent(serviceId)}/${packageId ? `?package_id=${encodeURIComponent(packageId)}` : ""}`, "DELETE"),
+  clearServerCart: () => bookingRequest<void>("/cart/", "DELETE"),
   bookings: (page = 1) => bookingRequest<{ count: number; results: Booking[] }>(`/bookings/?page=${page}`),
   booking: (id: string) => bookingRequest<Booking>(`/bookings/${id}/`),
   serviceReviews: (serviceIdOrSlug: string) => bookingRequest<ServiceReviewSummary>(`/services/${encodeURIComponent(serviceIdOrSlug)}/reviews/`),

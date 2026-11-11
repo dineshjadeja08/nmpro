@@ -304,9 +304,9 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
         booking && (
           <>
             {confirmed && (
-              <div className="flex flex-wrap items-center justify-between gap-4 rounded-[20px] bg-emerald-50/90 p-5 text-emerald-950">
+              <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-emerald-50/90 p-5 text-emerald-950">
                 <div className="flex items-center gap-3">
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-600 text-white animate-[popInOnce_.32s_ease-out]">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-emerald-600 text-white animate-[popInOnce_.32s_ease-out]">
                     <CheckCircle2 size={22} strokeWidth={1.75} />
                   </span>
                   <div>
@@ -320,7 +320,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
                   <button
                     type="button"
                     onClick={() => downloadBookingIcs(booking)}
-                    className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-white px-4 text-xs font-bold text-[#1C1917] shadow-xs"
+                    className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md bg-white px-4 text-xs font-bold text-[#1C1917] shadow-xs"
                   >
                     <CalendarPlus size={15} strokeWidth={1.5} className="text-[#800020]" /> Add to calendar
                   </button>
@@ -341,7 +341,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
                 <button
                   type="button"
                   onClick={() => downloadBookingIcs(booking)}
-                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-[#D6CEC6] bg-white px-4 text-xs font-bold text-[#1C1917]"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-md border border-[#D6CEC6] bg-white px-4 text-xs font-bold text-[#1C1917]"
                 >
                   <CalendarPlus size={15} strokeWidth={1.5} className="text-[#800020]" /> Add to calendar
                 </button>
@@ -357,7 +357,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
             {error && <div className="booking-warning" role="alert">{error}</div>}
             {paymentMessage && <div className="booking-warning" role="status">{paymentMessage}</div>}
             {reviewMessage && (
-              <div className="rounded-2xl bg-emerald-50 p-4 text-xs font-semibold text-emerald-900" role="status">
+              <div className="rounded-lg bg-emerald-50 p-4 text-xs font-semibold text-emerald-900" role="status">
                 {reviewMessage}
               </div>
             )}
@@ -410,7 +410,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
               </section>
             )}
 
-            <div className="rounded-[20px] bg-white p-6 shadow-[0_8px_28px_rgba(28,25,23,0.05)]">
+            <div className="rounded-lg bg-white p-6 shadow-[0_8px_28px_rgba(28,25,23,0.05)]">
               <div className="draft-summary">
                 <div><span>Service</span><b>{booking.service} · {booking.package}</b></div>
                 <div>
@@ -434,7 +434,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
 
             {/* Post-job One-Tap Rating + Tags + Photo Upload */}
             {booking.can_review && (
-              <section className="rounded-[20px] bg-white p-6 shadow-[0_10px_30px_rgba(28,25,23,0.06)] space-y-4">
+              <section className="rounded-lg bg-white p-6 shadow-[0_10px_30px_rgba(28,25,23,0.06)] space-y-4">
                 <h2 className="font-serif text-xl font-bold text-[#1C1917]">How did your visit go?</h2>
                 <div className="flex flex-wrap gap-2">
                   {[1, 2, 3, 4, 5].map((star) => (
@@ -442,7 +442,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
                       key={star}
                       type="button"
                       onClick={() => setReviewRating(star)}
-                      className={`inline-flex min-h-[48px] items-center gap-1 rounded-full px-4 text-sm font-bold transition ${
+                      className={`inline-flex min-h-[48px] items-center gap-1 rounded-md px-4 text-sm font-bold transition ${
                         reviewRating >= star
                           ? "bg-[#C8A35B] text-white"
                           : "bg-[#F4EFE9] text-[#57534E]"
@@ -466,7 +466,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
                           onClick={() =>
                             setReviewTags((curr) => (curr.includes(tag) ? curr.filter((t) => t !== tag) : [...curr, tag]))
                           }
-                          className={`min-h-[40px] rounded-full px-3.5 text-xs font-semibold transition ${
+                          className={`min-h-[40px] rounded-md px-3.5 text-xs font-semibold transition ${
                             active ? "bg-[#800020] text-white" : "bg-[#F4EFE9] text-[#1C1917]"
                           }`}
                         >
@@ -482,10 +482,10 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
                   value={reviewComment}
                   onChange={(e) => setReviewComment(e.target.value)}
                   placeholder="Share a quick note about your pro or work quality..."
-                  className="w-full rounded-2xl border border-[#D6CEC6] bg-[#FBF8F5] p-3.5 text-sm outline-none focus:border-[#800020]"
+                  className="w-full rounded-lg border border-[#D6CEC6] bg-[#FBF8F5] p-3.5 text-sm outline-none focus:border-[#800020]"
                 />
 
-                <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-full border border-[#D6CEC6] bg-[#FBF8F5] px-4 text-xs font-bold text-[#1C1917]">
+                <label className="inline-flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md border border-[#D6CEC6] bg-[#FBF8F5] px-4 text-xs font-bold text-[#1C1917]">
                   <Camera size={15} strokeWidth={1.5} className="text-[#800020]" />
                   <span>{reviewPhoto ? reviewPhoto.name : "Add a work photo (optional)"}</span>
                   <input
@@ -510,20 +510,20 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
             )}
 
             {booking.review && (
-              <section className="rounded-[20px] bg-white p-6 shadow-[0_6px_20px_rgba(28,25,23,0.05)] space-y-2">
+              <section className="rounded-lg bg-white p-6 shadow-[0_6px_20px_rgba(28,25,23,0.05)] space-y-2">
                 <h2 className="font-serif text-lg font-bold text-[#1C1917]">Your review ({booking.review.rating} ★)</h2>
                 <p className="text-sm text-[#57534E]">{booking.review.comment || "Rated without comment."}</p>
                 {booking.review.tags && booking.review.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {booking.review.tags.map((t) => (
-                      <span key={t} className="rounded-full bg-[#f5ebe8] px-2.5 py-0.5 text-xs font-semibold text-[#800020]">
+                      <span key={t} className="rounded-md bg-[#f5ebe8] px-2.5 py-0.5 text-xs font-semibold text-[#800020]">
                         {t}
                       </span>
                     ))}
                   </div>
                 )}
                 {booking.review.photo_url && resolveUploadedMediaUrl(booking.review.photo_url) && (
-                  <div className="relative h-28 w-40 overflow-hidden rounded-xl">
+                  <div className="relative h-28 w-40 overflow-hidden rounded-md">
                     <ServiceImage src={booking.review.photo_url} alt="Your uploaded work photo" sizes="160px" />
                   </div>
                 )}
@@ -531,7 +531,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
             )}
 
             {/* WhatsApp Opt-in */}
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[18px] bg-white p-4 shadow-[0_6px_20px_rgba(28,25,23,0.04)]">
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-lg bg-white p-4 shadow-[0_6px_20px_rgba(28,25,23,0.04)]">
               <span className="flex items-center gap-2.5 text-sm font-medium text-[#1C1917]">
                 <MessageCircle size={18} strokeWidth={1.5} className="text-emerald-700" />
                 <span>Receive WhatsApp updates for pro arrival &amp; invoice</span>
@@ -545,7 +545,7 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
             </label>
             {whatsappNotice && <p className="text-xs font-semibold text-emerald-700">{whatsappNotice}</p>}
 
-            <section className="booking-timeline rounded-[20px] bg-white p-6 shadow-[0_6px_20px_rgba(28,25,23,0.05)]">
+            <section className="booking-timeline rounded-lg bg-white p-6 shadow-[0_6px_20px_rgba(28,25,23,0.05)]">
               <h2 className="font-serif text-lg font-bold">Timeline</h2>
               <div className="mt-3 space-y-1.5 text-xs text-[#57534E]">
                 {booking.events.map((event, index) => (

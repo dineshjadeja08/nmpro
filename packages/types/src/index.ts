@@ -5,6 +5,7 @@ export interface ServiceCategory {
   description: string;
   short_description?: string;
   image_url?: string | null;
+  icon_url?: string | null;
   banner_image?: string | null;
   banner_title?: string;
   banner_subtitle?: string;
@@ -35,6 +36,10 @@ export interface ServiceSparePartRate {
   brand?: string;
   price_paise?: number | null;
   price_label?: string;
+}
+export interface ServiceBrand {
+  name: string;
+  logo_url?: string;
 }
 export interface PublicReview {
   id: string;
@@ -90,9 +95,13 @@ export interface Service {
   category_name?: string;
   starting_price_paise: number | null;
   price_note?: string;
+  important_notes?: string;
   rating_avg?: number | null;
   review_count?: number;
   is_active: boolean;
+  is_popular?: boolean;
+  is_featured?: boolean;
+  show_in_app?: boolean;
   sort_order?: number;
   banner_title?: string;
   banner_subtitle?: string;
@@ -112,6 +121,7 @@ export interface Service {
   faqs?: ServiceFAQItem[];
   process_steps?: ServiceProcessStep[];
   spare_parts_rates?: ServiceSparePartRate[];
+  brands?: ServiceBrand[];
   seo_title?: string;
   seo_description?: string;
   images?: ServiceImage[];
