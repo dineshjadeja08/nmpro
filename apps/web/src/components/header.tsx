@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  CalendarCheck,
   CheckCircle2,
   ChevronDown,
+  CreditCard,
+  LogOut,
   MapPin,
   Menu,
   Search,
@@ -12,16 +15,141 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { bookingApi } from "@/lib/booking-api";
 import { useBookingCart } from "./booking-cart-provider";
 import { Brand } from "./brand";
 import { GoogleMapsLocationPicker, type PickedLocationResult } from "./google-maps-location-picker";
 import { useServiceLocation } from "./location-provider";
+import { QuickOtpSheet } from "./quick-otp-sheet";
+
+function ProfileMenuDropdown({
+  phone,
+  onClose,
+  onSignOut,
+}: {
+  phone: string;
+  onClose: () => void;
+  onSignOut: () => void;
+}) {
+  return (
+    <div
+      role="menu"
+      aria-label="Profile options"
+      className="absolute right-0 z-50 mt-2 w-60 rounded-lg border border-[#EAE3DC] bg-white p-1.5 shadow-[0_18px_45px_rgba(28,25,23,0.16)]"
+    >
+      <div className="border-b border-[#F4EFE9] px-3 py-2">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Signed in
+        </span>
+        <p className="mt-0.5 truncate text-xs font-bold text-[#1C1917]">{phone}</p>
+      </div>
+      <div className="py-1 text-xs">
+        <Link
+          href="/account"
+          role="menuitem"
+          onClick={onClose}
+          className="flex items-center gap-2 rounded-md px-3 py-2 font-medium text-[#1C1917] hover:bg-[#FAF6F2] hover:text-[#800020]"
+        >
+          <UserRound size={14} />
+          <span>Account & Addresses</span>
+        </Link>
+        <Link
+          href="/bookings"
+          role="menuitem"
+          onClick={onClose}
+          className="flex items-center gap-2 rounded-md px-3 py-2 font-medium text-[#1C1917] hover:bg-[#FAF6F2] hover:text-[#800020]"
+        >
+          <CalendarCheck size={14} />
+          <span>My Bookings</span>
+        </Link>
+        <Link
+          href="/payments"
+          role="menuitem"
+          onClick={onClose}
+          className="flex items-center gap-2 rounded-md px-3 py-2 font-medium text-[#1C1917] hover:bg-[#FAF6F2] hover:text-[#800020]"
+        >
+          <CreditCard size={14} />
+          <span>Payments & Receipts</span>
+        </Link>
+      </div>
+      <div className="border-t border-[#F4EFE9] pt-1">
+        <button
+          type="button"
+          role="menuitem"
+          onClick={onSignOut}
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-semibold text-[#800020] hover:bg-[#FBECEF]"
+        >
+          <LogOut size={14} />
+          <span>Sign out</span>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [signedInPhone, setSignedInPhone] = useState<string | null>(null);
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [profileMenuTarget, setProfileMenuTarget] = useState<"desktop" | "mobile" | null>(null);
+  const desktopMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
   const { location, setLocation, clearLocation, pickerOpen, openPicker, closePicker } = useServiceLocation();
   const { totalCount, openSheet } = useBookingCart();
+
+  useEffect(() => {
+    let active = true;
+    const syncAuth = () => {
+      bookingApi
+        .me()
+        .then((me) => {
+          if (active) setSignedInPhone(me.phone_e164 || "Signed in");
+        })
+        .catch(() => {
+          if (active) {
+            setSignedInPhone(null);
+            setProfileMenuTarget(null);
+          }
+        });
+    };
+    syncAuth();
+    window.addEventListener("nammapros:auth-changed", syncAuth);
+    return () => {
+      active = false;
+      window.removeEventListener("nammapros:auth-changed", syncAuth);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!profileMenuTarget) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const inDesktop = desktopMenuRef.current?.contains(target);
+      const inMobile = mobileMenuRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setProfileMenuTarget(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setProfileMenuTarget(null);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [profileMenuTarget]);
+
+  async function handleSignOut() {
+    setProfileMenuTarget(null);
+    try {
+      await bookingApi.logout();
+      setSignedInPhone(null);
+    } catch {
+      // keep state unchanged if logout fails
+    }
+  }
 
   useEffect(() => {
     if (!pickerOpen) return;
@@ -91,14 +219,43 @@ export function Header() {
           <Link href="/bookings" className="hover:text-[#800020] transition">
             Bookings
           </Link>
-          <Link
-            href="/account"
-            aria-label="Account"
-            className="inline-flex items-center gap-1.5 rounded-md border border-[#D6CEC6] bg-white px-3.5 py-1.5 font-semibold text-[#1C1917] transition hover:border-[#800020]"
-          >
-            <UserRound size={14} strokeWidth={1.75} />
-            <span>Sign in</span>
-          </Link>
+          {signedInPhone ? (
+            <div ref={desktopMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setProfileMenuTarget((v) => (v === "desktop" ? null : "desktop"))}
+                aria-label="Account profile menu"
+                aria-expanded={profileMenuTarget === "desktop"}
+                aria-haspopup="menu"
+                title={`Signed in as ${signedInPhone}`}
+                className="relative grid h-9 w-9 place-items-center rounded-full bg-[#800020] text-white shadow-xs ring-2 ring-[#FBECEF] transition hover:bg-[#5e0017]"
+              >
+                <UserRound size={16} strokeWidth={2} />
+                <span
+                  aria-hidden="true"
+                  className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#FBF8F5] bg-emerald-500"
+                />
+              </button>
+
+              {profileMenuTarget === "desktop" && (
+                <ProfileMenuDropdown
+                  phone={signedInPhone}
+                  onClose={() => setProfileMenuTarget(null)}
+                  onSignOut={() => void handleSignOut()}
+                />
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSignInOpen(true)}
+              aria-label="Sign in"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[#D6CEC6] bg-white px-3.5 py-1.5 font-semibold text-[#1C1917] transition hover:border-[#800020] hover:text-[#800020]"
+            >
+              <UserRound size={14} strokeWidth={1.75} />
+              <span>Sign in</span>
+            </button>
+          )}
           {totalCount > 0 ? (
             <button
               type="button"
@@ -133,6 +290,39 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
+          {signedInPhone ? (
+            <div ref={mobileMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setProfileMenuTarget((v) => (v === "mobile" ? null : "mobile"))}
+                aria-label="Profile menu"
+                aria-expanded={profileMenuTarget === "mobile"}
+                className="relative grid h-9 w-9 place-items-center rounded-full bg-[#800020] text-white shadow-xs ring-2 ring-[#FBECEF]"
+              >
+                <UserRound size={16} strokeWidth={2} />
+                <span
+                  aria-hidden="true"
+                  className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#FBF8F5] bg-emerald-500"
+                />
+              </button>
+              {profileMenuTarget === "mobile" && (
+                <ProfileMenuDropdown
+                  phone={signedInPhone}
+                  onClose={() => setProfileMenuTarget(null)}
+                  onSignOut={() => void handleSignOut()}
+                />
+              )}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setSignInOpen(true)}
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-[#D6CEC6] bg-white px-2.5 text-xs font-semibold text-[#1C1917]"
+            >
+              <UserRound size={13} />
+              <span>Sign in</span>
+            </button>
+          )}
           {totalCount > 0 && (
             <button
               type="button"
@@ -195,6 +385,18 @@ export function Header() {
           <Link href="/account" className="rounded-lg px-2 py-2 hover:bg-[#FAF6F2]" onClick={() => setOpen(false)}>
             Account
           </Link>
+          {!signedInPhone && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setSignInOpen(true);
+              }}
+              className="rounded-lg px-2 py-2 text-left font-bold text-[#800020] hover:bg-[#FBECEF]"
+            >
+              Sign in with Mobile OTP
+            </button>
+          )}
         </nav>
       )}
       </header>
@@ -311,6 +513,13 @@ export function Header() {
           </div>
         </div>
       )}
+      <QuickOtpSheet
+        open={signInOpen}
+        onClose={() => setSignInOpen(false)}
+        title="Sign in to NammaPros"
+        subtitle="Verify your mobile number once to view saved addresses, track visits, and book in 1 tap."
+        onAuthenticated={() => setSignInOpen(false)}
+      />
     </>
   );
 }

@@ -1,11 +1,13 @@
 import {
   ArrowRight,
   CheckCircle2,
+  ShieldCheck,
   Star,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { CategoryIcon } from "@/components/category-icon";
+import { HeroLocationPill } from "@/components/hero-location-pill";
 import { OfferSpotlight } from "@/components/offer-spotlight";
 import { ProblemSearch } from "@/components/problem-search";
 import { ServiceCatalogGrid } from "@/components/service-catalog-grid";
@@ -26,12 +28,15 @@ export default async function Home() {
   return (
     <main className="bg-[#FBF8F5]">
       {/* 1. Split Hero Banner (Blush Rose #FBECEF + Technician on Right) */}
-      <section className="relative overflow-hidden border-b border-[#EAE3DC] bg-[#FBECEF] pt-6 pb-0 text-[#1C1917] sm:pt-8">
+      <section className="relative overflow-hidden border-b border-[#EAE3DC] bg-[#FBECEF] pt-6 pb-6 text-[#1C1917] sm:pt-8 sm:pb-0">
         <div className="container grid items-end gap-6 lg:grid-cols-[1.08fr_0.92fr] lg:gap-6">
-          <div className="max-w-2xl space-y-5 pb-2 lg:pb-10">
-            <span className="inline-flex items-center rounded-md border border-[#800020]/15 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#800020] shadow-2xs">
-              Namma area, namma pros.
-            </span>
+          <div className="max-w-2xl space-y-5 pb-0 sm:pb-6 lg:pb-10">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-md border border-[#800020]/15 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#800020] shadow-2xs">
+                Namma area, namma pros.
+              </span>
+              <HeroLocationPill />
+            </div>
 
             <h1 className="text-3xl font-bold tracking-tight text-[#1C1917] sm:text-5xl lg:text-[50px] lg:leading-[1.12]">
               What’s not working{" "}
@@ -44,27 +49,49 @@ export default async function Home() {
 
             <ProblemSearch showChips />
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
-              <Link
-                href="/book"
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#800020] px-5 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017]"
-              >
-                <span>Book a visit</span>
-                <ArrowRight size={15} strokeWidth={2} />
-              </Link>
-              <Link
-                href="/services"
-                className="inline-flex min-h-[44px] items-center rounded-md border border-[#800020]/20 bg-white px-5 text-xs font-semibold text-[#1C1917] transition hover:border-[#800020] hover:text-[#800020]"
-              >
-                Explore all services
-              </Link>
+            <div className="space-y-3 pt-1">
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href="/book"
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#800020] px-5 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017]"
+                >
+                  <span>Book a visit</span>
+                  <ArrowRight size={15} strokeWidth={2} />
+                </Link>
+                <Link
+                  href="/services"
+                  className="inline-flex min-h-[44px] items-center rounded-md border border-[#800020]/20 bg-white px-5 text-xs font-semibold text-[#1C1917] transition hover:border-[#800020] hover:text-[#800020]"
+                >
+                  Explore all services
+                </Link>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-medium text-[#57534E]">
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="shrink-0 text-emerald-700" />
+                  Verified pros
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck size={13} className="shrink-0 text-[#800020]" />
+                  30-day warranty
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="shrink-0 text-emerald-700" />
+                  Pay after transparent quote
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="relative flex items-end justify-center lg:justify-end">
+          <div className="relative hidden items-end justify-center sm:flex lg:justify-end">
+            {/* Architectural burgundy-tinted backdrop behind lower 75% so head breaks the top edge */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 bottom-0 top-2 rounded-t-lg bg-[radial-gradient(circle_at_60%_45%,rgba(255,255,255,0.75),transparent_70%)]"
+              className="pointer-events-none absolute bottom-0 left-8 right-0 top-[22%] rounded-t-lg border border-b-0 border-[#800020]/15 bg-[#800020]/[0.07] sm:left-16 lg:left-10"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute bottom-2 left-10 right-2 top-[24%] rounded-t-lg border border-b-0 border-white/70 sm:left-18 lg:left-12"
             />
             <Image
               src="/images/brand/hero-technician-cutout.png"
@@ -73,22 +100,23 @@ export default async function Home() {
               height={566}
               priority
               unoptimized
-              className="relative z-10 h-[370px] w-auto object-contain object-bottom sm:h-[450px] lg:h-[520px] xl:h-[550px]"
+              className="relative z-10 h-[380px] w-auto object-contain object-bottom md:h-[440px] lg:h-[520px] xl:h-[545px]"
             />
 
-            <div className="absolute bottom-4 left-2 right-2 z-20 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#EAE3DC] bg-white/95 px-3.5 py-2.5 text-[#1C1917] shadow-md backdrop-blur-sm sm:left-6 sm:right-2">
-              <div className="inline-flex items-center gap-2 text-[11px] leading-tight">
-                <CheckCircle2 size={15} className="shrink-0 text-emerald-700" />
-                <div>
-                  <strong className="block font-bold text-[#1C1917]">Verified pros</strong>
-                  <span className="font-normal text-[#57534E]">Direct slot booking · Upfront pricing</span>
-                </div>
+            {/* Compact corner floating pill leaves tool belt uncovered */}
+            <div className="absolute bottom-5 left-2 z-20 max-w-[230px] rounded-lg border border-[#EAE3DC] bg-white/95 px-3 py-2 text-[#1C1917] shadow-md backdrop-blur-sm sm:left-4 lg:left-0">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold leading-tight text-[#1C1917]">
+                <CheckCircle2 size={14} className="shrink-0 text-emerald-700" />
+                <span>Verified pros</span>
               </div>
+              <p className="mt-0.5 text-[10px] font-normal leading-snug text-[#57534E]">
+                Direct slot booking · Upfront pricing
+              </p>
 
               {trust?.average_rating && trust.review_count > 0 && (
-                <div className="inline-flex items-center gap-1.5 rounded-md bg-[#1C1917] px-2.5 py-1 text-white">
-                  <span className="text-xs font-bold leading-none">{trust.average_rating}</span>
-                  <Star size={12} className="fill-[#C8A35B] text-[#C8A35B]" />
+                <div className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-[#1C1917] px-2 py-0.5 text-white">
+                  <span className="text-[11px] font-bold leading-none">{trust.average_rating}</span>
+                  <Star size={11} className="fill-[#C8A35B] text-[#C8A35B]" />
                   <span className="text-[10px] font-normal text-[#D6CEC6]">{trust.review_count} reviews</span>
                 </div>
               )}

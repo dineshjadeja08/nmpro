@@ -630,4 +630,23 @@ describe("customer experience", () => {
     );
     expect(screen.queryByRole("region", { name: "Brands we service" })).toBeNull();
   });
+
+  it("opens OTP popup from header Sign in and swaps to profile circle when signed in", async () => {
+    vi.mocked(bookingApi.me).mockRejectedValueOnce(new Error("Unauthorized"));
+    render(<Header />);
+    const signInButtons = await screen.findAllByRole("button", { name: "Sign in" });
+    fireEvent.click(signInButtons[0]);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.getByText("Sign in to NammaPros")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close OTP dialog" }));
+
+    vi.mocked(bookingApi.me).mockResolvedValueOnce({ id: 1, phone_e164: "+919876543210" });
+    window.dispatchEvent(new CustomEvent("nammapros:auth-changed"));
+    const profileBtn = await screen.findByRole("button", { name: "Account profile menu" });
+    fireEvent.click(profileBtn);
+    expect(screen.getByText("+919876543210")).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Account & Addresses" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "My Bookings" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeTruthy();
+  });
 });

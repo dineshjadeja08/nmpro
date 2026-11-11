@@ -11,10 +11,14 @@ export function QuickOtpSheet({
   open,
   onClose,
   onAuthenticated,
+  title,
+  subtitle,
 }: {
   open: boolean;
   onClose: () => void;
   onAuthenticated: () => void;
+  title?: string;
+  subtitle?: string;
 }) {
   const [phoneDigits, setPhoneDigits] = useState("");
   const [challengeSent, setChallengeSent] = useState(false);
@@ -22,6 +26,15 @@ export function QuickOtpSheet({
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open || !challengeSent) return;
@@ -79,6 +92,9 @@ export function QuickOtpSheet({
     try {
       const idToken = await confirmPhoneVerificationCode(formattedPhone, otp.trim());
       await bookingApi.firebaseAuth(idToken);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("nammapros:auth-changed"));
+      }
       onAuthenticated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Incorrect code. Please retry.");
@@ -92,6 +108,9 @@ export function QuickOtpSheet({
     setError("");
     try {
       await bookingApi.firebaseAuth("dev-token:+919876543210");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("nammapros:auth-changed"));
+      }
       onAuthenticated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign-in failed.");
@@ -118,7 +137,7 @@ export function QuickOtpSheet({
               <Smartphone size={14} strokeWidth={1.5} /> Quick verification
             </span>
             <h3 id="quick-otp-title" className="mt-1 font-serif text-xl font-bold text-[#1C1917]">
-              {challengeSent ? "Enter the 6-digit code" : "Verify your mobile to hold this slot"}
+              {challengeSent ? "Enter the 6-digit code" : title || "Verify your mobile to hold this slot"}
             </h3>
           </div>
           <button
@@ -134,7 +153,7 @@ export function QuickOtpSheet({
         <p className="text-xs leading-relaxed text-[#57534E]">
           {challengeSent
             ? `We sent a code to ${formattedPhone}. If your browser receives SMS codes automatically, it fills in by itself.`
-            : "No long forms. Just verify your mobile number to confirm your visit address."}
+            : subtitle || "No long forms. Just verify your mobile number to confirm your visit address."}
         </p>
 
         {error && (
