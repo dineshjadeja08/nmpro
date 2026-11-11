@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 from uuid import UUID
 
@@ -7,9 +8,34 @@ import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _load_local_env_file(env_path: Path) -> None:
+    """Load simple KEY=VALUE lines from .env.local in development without overriding existing env."""
+    if not env_path.is_file():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_RUNNING_PYTEST = "pytest" in sys.modules or (
+    len(sys.argv) > 0 and Path(sys.argv[0]).name.startswith("pytest")
+)
+
 ENVIRONMENT = os.getenv("NAMMAPROS_ENV", "development")
 if ENVIRONMENT not in {"development", "test", "staging", "production"}:
     raise ImproperlyConfigured("NAMMAPROS_ENV must be development, test, staging or production")
+
+if ENVIRONMENT == "development" and not _RUNNING_PYTEST:
+    _load_local_env_file(BASE_DIR / ".env.local")
+    _load_local_env_file(BASE_DIR.parent.parent / ".env.local")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 DEBUG = ENVIRONMENT == "development" and os.getenv("DJANGO_DEBUG", "true").lower() == "true"
@@ -51,17 +77,29 @@ TEMPLATES = [{"BACKEND": "django.template.backends.django.DjangoTemplates", "DIR
 WSGI_APPLICATION = "config.wsgi.application"
 AUTH_USER_MODEL = "users.User"
 
-database_url = os.getenv("DATABASE_URL")
+_MIGRATION_COMMANDS = {"migrate", "makemigrations", "showmigrations", "squashmigrations"}
+_is_migration_cmd = len(sys.argv) > 1 and sys.argv[1] in _MIGRATION_COMMANDS
+_direct_database_url = os.getenv("DATABASE_URL_UNPOOLED") or os.getenv("DIRECT_URL")
+database_url = (_direct_database_url if _is_migration_cmd and _direct_database_url else None) or os.getenv("DATABASE_URL")
 if not database_url and ENVIRONMENT in {"staging", "production"}:
     raise ImproperlyConfigured("DATABASE_URL is required")
 DATABASES = {"default": dj_database_url.parse(database_url) if database_url else {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
-if ENVIRONMENT in {"staging", "production"}:
-    if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
-        raise ImproperlyConfigured("Managed environments require PostgreSQL")
-    DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("DB_CONN_MAX_AGE", "0"))
-    DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
-    if not str(DATABASES["default"].get("HOST", "")).startswith("/cloudsql/"):
+if DATABASES["default"]["ENGINE"] == "django.db.backends.postgresql":
+    db_host = str(DATABASES["default"].get("HOST", ""))
+    if "-pooler" in db_host or os.getenv("DB_DISABLE_SERVER_SIDE_CURSORS", "false").lower() == "true":
+        # Required by Neon PgBouncer transaction pooling when using psycopg3
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    if ENVIRONMENT in {"staging", "production"}:
+        DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("DB_CONN_MAX_AGE", "0"))
+        DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+        if not db_host.startswith("/cloudsql/"):
+            DATABASES["default"].setdefault("OPTIONS", {})["sslmode"] = "require"
+    elif "neon.tech" in db_host:
+        DATABASES["default"]["CONN_MAX_AGE"] = int(os.getenv("DB_CONN_MAX_AGE", "0"))
+        DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
         DATABASES["default"].setdefault("OPTIONS", {})["sslmode"] = "require"
+elif ENVIRONMENT in {"staging", "production"}:
+    raise ImproperlyConfigured("Managed environments require PostgreSQL")
 if ENVIRONMENT == "test":
     DATABASES["default"] = {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memory:"}
 REDIS_URL = os.getenv("REDIS_URL", "")
@@ -196,8 +234,12 @@ X_FRAME_OPTIONS = "DENY"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 60 * 60 * 12
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+CROSS_SITE_COOKIES = (
+    ENVIRONMENT in {"staging", "production"}
+    and os.getenv("DJANGO_CROSS_SITE_COOKIES", "true").lower() == "true"
+)
+SESSION_COOKIE_SAMESITE = "None" if CROSS_SITE_COOKIES else "Lax"
+CSRF_COOKIE_SAMESITE = "None" if CROSS_SITE_COOKIES else "Lax"
 if ENVIRONMENT in {"staging", "production"}:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True

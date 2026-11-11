@@ -18,3 +18,4 @@ var/
 reference_ps_coreF1/
 !.gitkeep
 *.tsbuildinfo
+.neon

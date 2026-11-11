@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: nammapros-api
+    runtime: docker
+    dockerfilePath: ./infrastructure/docker/api.Dockerfile
+    dockerContext: .
+    region: singapore
+    plan: starter
+    preDeployCommand: python manage.py migrate --noinput
+    healthCheckPath: /api/v1/health/
+    envVars:
+      - key: NAMMAPROS_ENV
+        value: production
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_TRUST_PROXY_HEADERS
+        value: "true"
+      - key: DJANGO_CROSS_SITE_COOKIES
+        value: "true"
+      - key: DB_CONN_MAX_AGE
+        value: "0"
+      - key: DJANGO_HSTS_SECONDS
+        value: "300"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: JWT_SIGNING_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: PRIVATE_MEDIA_BUCKET
+        sync: false
+      - key: PUBLIC_BOOKING_ENABLED
+        value: "false"
+      - key: PILOT_ENABLED
+        value: "false"
+      - key: RAZORPAY_ENABLED
+        value: "false"
+      - key: WHATSAPP_ENABLED
+        value: "false"
