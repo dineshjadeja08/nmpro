@@ -6,7 +6,7 @@ from common.models import UUIDStampedModel
 
 
 class Category(UUIDStampedModel):
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(max_length=120, unique=True)
     name = models.CharField(max_length=80)
     description = models.CharField(max_length=240, blank=True)
     image = models.ImageField(upload_to="categories/", blank=True, null=True)
@@ -53,7 +53,7 @@ class Category(UUIDStampedModel):
 
 class Service(UUIDStampedModel):
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="services")
-    slug = models.SlugField(unique=True)
+    slug = models.SlugField(max_length=120, unique=True)
     name = models.CharField(max_length=100)
     summary = models.CharField(max_length=240)
     description = models.TextField(blank=True)
@@ -199,7 +199,7 @@ class PricingRule(UUIDStampedModel):
 
 class ServiceSlugHistory(UUIDStampedModel):
     service = models.ForeignKey(Service, on_delete=models.CASCADE, related_name="slug_history")
-    old_slug = models.SlugField(unique=True)
+    old_slug = models.SlugField(max_length=120, unique=True)
 
 
 class SEOLandingPage(UUIDStampedModel):

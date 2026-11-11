@@ -1,5 +1,6 @@
 import datetime
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
 from domains.catalog.models import Category, Service, ServicePackage, PricingRule
@@ -810,6 +811,7 @@ RAW_CATALOGUE = [
 class Command(BaseCommand):
     help = "Seed the canonical 13 NammaPros categories and exact sub-services, deactivating any extra categories/services."
 
+    @transaction.atomic
     def handle(self, *args, **options):
         # Ensure active zones exist for coverage & pricing
         city, _ = City.objects.get_or_create(slug="chennai", defaults={"name": "Chennai", "is_active": True})
@@ -1141,9 +1143,9 @@ class Command(BaseCommand):
         deactivated_cats = Category.objects.exclude(slug__in=canonical_category_slugs).update(is_active=False)
         deactivated_svcs = Service.objects.exclude(slug__in=canonical_service_slugs).update(is_active=False)
 
-        # Seed appointment slots for active packages across the next 7 days
+        # Seed appointment slots for active packages across the next 7 days in bulk
         now = timezone.now()
-        slot_count = 0
+        pending_slots = []
         for day_offset in range(1, 8):
             target_date = (now + datetime.timedelta(days=day_offset)).date()
             for hour in [9, 13, 16]:
@@ -1151,15 +1153,22 @@ class Command(BaseCommand):
                 end_dt = start_dt + datetime.timedelta(hours=2)
                 for pkg in active_packages:
                     for z in zones:
-                        slot, created = AppointmentSlot.objects.get_or_create(
-                            zone=z,
-                            package=pkg,
-                            start_at=start_dt,
-                            end_at=end_dt,
-                            defaults={"capacity": 5, "is_active": True},
+                        pending_slots.append(
+                            AppointmentSlot(
+                                zone=z,
+                                package=pkg,
+                                start_at=start_dt,
+                                end_at=end_dt,
+                                capacity=5,
+                                is_active=True,
+                            )
                         )
-                        if created:
-                            slot_count += 1
+        created_slots = AppointmentSlot.objects.bulk_create(
+            pending_slots,
+            batch_size=500,
+            ignore_conflicts=True,
+        )
+        slot_count = len(created_slots)
 
         from django.core.cache import cache
         cache.clear()
