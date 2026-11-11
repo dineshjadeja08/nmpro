@@ -2,6 +2,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import UUID
 
 import dj_database_url
@@ -105,7 +106,9 @@ if ENVIRONMENT == "test":
 REDIS_URL = os.getenv("REDIS_URL", "")
 if ENVIRONMENT in {"staging", "production"} and not REDIS_URL:
     raise ImproperlyConfigured("Managed environments need REDIS_URL for shared throttling and jobs")
-if ENVIRONMENT in {"staging", "production"} and not REDIS_URL.startswith("rediss://"):
+_redis_host = (urlparse(REDIS_URL).hostname or "") if REDIS_URL else ""
+_is_render_internal_redis = REDIS_URL.startswith("redis://") and _redis_host.startswith("red-") and "." not in _redis_host
+if ENVIRONMENT in {"staging", "production"} and not (REDIS_URL.startswith("rediss://") or _is_render_internal_redis):
     raise ImproperlyConfigured("Managed Redis must use TLS (rediss://)")
 CACHES = {"default": {"BACKEND": "django_redis.cache.RedisCache", "LOCATION": REDIS_URL,
                       "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient", "IGNORE_EXCEPTIONS": False},
