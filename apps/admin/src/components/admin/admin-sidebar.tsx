@@ -60,6 +60,7 @@ export const adminNavigationSections: NavSection[] = [
     items: [
       { label: "Notifications", href: "/notifications", icon: Bell },
       { label: "Reviews", href: "/reviews", icon: Star },
+      { label: "Data Requests", href: "/data-requests", icon: Shield },
     ],
   },
   {

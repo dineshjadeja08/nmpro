@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from domains.bookings.models import Booking
 from .models import BlogPost, Category, FAQ, HomepageBanner, Review, SEOLandingPage, Service, ServiceImage, ServiceSlugHistory
+from .pricing import display_name, package_pricing, resolve_zone, with_ratings
 
 
 def serialize_category(category, sub_service_count=None):
@@ -45,15 +46,14 @@ def _serialize_review(r):
     area = ""
     if address:
         area = address.locality or address.city or ""
-    tech_name = r.technician.display_name if r.technician else ""
-    customer_label = (r.customer.get_full_name() or r.customer.first_name or "Customer").strip()
+    tech_name = ((r.technician.display_name or "").split() or [""])[0] if r.technician else ""
     return {
         "id": str(r.id),
         "rating": r.rating,
         "comment": r.comment,
         "tags": r.tags or [],
         "photo_url": r.photo_display,
-        "customer_name": customer_label or "Customer",
+        "customer_name": display_name(r.customer),
         "area": area,
         "technician_name": tech_name,
         "service_name": r.service.name if r.service_id else "",
@@ -63,23 +63,38 @@ def _serialize_review(r):
     }
 
 
-def _package_price_paise(pkg):
-    first_rule = next((pr for pr in pkg.prices.all() if pr.is_active), None)
-    if not first_rule:
-        return None
-    return int((first_rule.base_paise or 0) + (first_rule.inspection_paise or 0) + (first_rule.fee_paise or 0) + (first_rule.tax_paise or 0))
+SERVICE_PREFETCH = ("packages__prices", "images")
 
 
-def serialize_service(service):
+def public_services():
+    """Active services in active categories, with ratings annotated and prices prefetched."""
+    return with_ratings(
+        Service.objects.select_related("category").prefetch_related(*SERVICE_PREFETCH)
+        .filter(is_active=True, category__is_active=True)
+    )
+
+
+def _service_rating(service):
+    if hasattr(service, "_rating_avg"):
+        avg, count = service._rating_avg, service._review_count
+    else:
+        agg = Review.objects.filter(service=service, is_visible=True).aggregate(a=Avg("rating"), c=Count("id"))
+        avg, count = agg["a"], agg["c"]
+    return (round(avg, 1) if avg is not None else None), (count or 0)
+
+
+def serialize_service(service, zone=None):
     main_img = service.cover_image_display
     banner_img = service.landing_thumbnail_display
-    visible_reviews = [r for r in service.reviews.all() if r.is_visible] if hasattr(service, "_prefetched_objects_cache") and "reviews" in service._prefetched_objects_cache else list(Review.objects.filter(service=service, is_visible=True).only("rating"))
-    rating_avg = round(sum(r.rating for r in visible_reviews) / len(visible_reviews), 1) if visible_reviews else None
+    rating_avg, review_count = _service_rating(service)
     packages_data = []
+    cheapest = None
     for p in service.packages.all():
         if not p.is_active:
             continue
-        pkg_price = _package_price_paise(p)
+        pricing = package_pricing(p, zone)
+        if pricing["price_paise"] is not None and (cheapest is None or pricing["price_paise"] < cheapest["price_paise"]):
+            cheapest = pricing
         packages_data.append({
             "id": str(p.id),
             "name": p.name,
@@ -89,19 +104,24 @@ def serialize_service(service):
             "requirements": p.requirements,
             "inclusions": p.inclusions,
             "exclusions": p.exclusions,
-            "starting_price_paise": pkg_price if pkg_price is not None else service.starting_price_paise,
+            "starting_price_paise": pricing["price_paise"] if pricing["price_paise"] is not None else service.starting_price_paise,
             "original_price_paise": p.original_price_paise,
             "is_most_booked": bool(p.is_most_booked),
+            **pricing,
         })
     return {"id": str(service.id), "slug": service.slug, "name": service.name,
             "summary": service.summary, "short_description": service.summary,
             "description": service.description, "full_description": service.description,
             "category": service.category.slug, "category_id": str(service.category_id),
             "category_name": service.category.name,
-            "starting_price_paise": service.starting_price_paise,
+            "starting_price_paise": cheapest["price_paise"] if cheapest else service.starting_price_paise,
+            "starting_mrp_paise": cheapest["mrp_paise"] if cheapest else None,
+            "starting_discount_percent": cheapest["discount_percent"] if cheapest else None,
+            "zone_id": str(zone.id) if zone else None,
             "price_note": service.price_note,
             "rating_avg": rating_avg,
-            "review_count": len(visible_reviews),
+            "average_rating": rating_avg,
+            "review_count": review_count,
             "is_active": service.is_active,
             "is_popular": service.is_popular, "is_featured": service.is_featured, "show_in_app": service.show_in_app,
             "training_fee_paise": service.training_fee_paise, "important_notes": service.important_notes,
@@ -133,9 +153,8 @@ class CatalogView(APIView):
         categories = Category.objects.filter(is_active=True).annotate(
             sub_service_count=Count("services", filter=Q(services__is_active=True), distinct=True)
         ).order_by("sort_order", "name")
-        services = Service.objects.select_related("category").prefetch_related(
-            "packages__prices", "images", "reviews"
-        ).filter(is_active=True, category__is_active=True).order_by("sort_order", "name")
+        zone = resolve_zone(request.query_params)
+        services = public_services().order_by("sort_order", "name")
         reviews_qs = Review.objects.filter(is_visible=True).select_related(
             "customer", "technician", "booking__address", "service__category"
         ).order_by("-created_at")
@@ -144,7 +163,7 @@ class CatalogView(APIView):
         banners = HomepageBanner.objects.filter(is_active=True).order_by("sort_order", "created_at")[:6]
         return Response({
             "categories": [serialize_category(c) for c in categories],
-            "services": [serialize_service(s) for s in services],
+            "services": [serialize_service(s, zone) for s in services],
             "reviews": [_serialize_review(r) for r in reviews_qs[:6]],
             "banners": [
                 {
@@ -172,17 +191,44 @@ class ServiceDetailView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, slug):
-        service = Service.objects.select_related("category").prefetch_related("packages__prices", "images", "reviews").filter(
-            slug=slug, is_active=True, category__is_active=True
-        ).first()
+        service = public_services().filter(slug=slug).first()
         if not service:
             history = ServiceSlugHistory.objects.select_related("service").filter(
                 old_slug=slug, service__is_active=True, service__category__is_active=True
             ).first()
             if history:
-                return redirect(f"/api/v1/services/{history.service.slug}/", permanent=True)
+                query = request.META.get("QUERY_STRING", "")
+                target = f"/api/v1/services/{history.service.slug}/" + (f"?{query}" if query else "")
+                return redirect(target, permanent=True)
             get_object_or_404(Service, slug="__missing__")
-        return Response(serialize_service(service))
+        return Response(serialize_quick_view(service, resolve_zone(request.query_params)))
+
+
+def rating_breakdown(reviews):
+    breakdown = {str(star): 0 for star in (5, 4, 3, 2, 1)}
+    for row in reviews.order_by().values("rating").annotate(cnt=Count("id")):
+        key = str(row["rating"])
+        if key in breakdown:
+            breakdown[key] = row["cnt"]
+    return breakdown
+
+
+def serialize_quick_view(service, zone=None):
+    """Everything the quick view popup needs in one payload."""
+    data = serialize_service(service, zone)
+    first_package = next((p for p in service.packages.all() if p.is_active), None)
+    if not data["inclusions"] and first_package:
+        data["inclusions"] = first_package.inclusions
+    if not data["exclusions"] and first_package:
+        data["exclusions"] = first_package.exclusions
+    reviews = Review.objects.filter(service=service, is_visible=True)
+    data["rating_breakdown"] = rating_breakdown(reviews)
+    data["recent_reviews"] = [
+        _serialize_review(r) for r in reviews.select_related(
+            "customer", "technician", "booking__address", "service__category"
+        ).order_by("-created_at")[:5]
+    ]
+    return data
 
 
 class CategoryListView(APIView):
@@ -202,14 +248,14 @@ class CategoryDetailPublicView(APIView):
 
     def get(self, request, slug):
         category = get_object_or_404(Category, slug=slug, is_active=True)
-        services = Service.objects.select_related("category").prefetch_related(
-            "packages__prices", "images", "reviews"
-        ).filter(
-            category=category, is_active=True
-        ).order_by("sort_order", "name")
+        zone = resolve_zone(request.query_params)
+        services = list(public_services().filter(category=category).order_by("sort_order", "name"))
+        faqs = FAQ.objects.filter(category=category, is_active=True).order_by("sort_order", "created_at")
         return Response({
-            "category": serialize_category(category, sub_service_count=services.count()),
-            "services": [serialize_service(s) for s in services],
+            "category": serialize_category(category, sub_service_count=len(services)),
+            "services": [serialize_service(s, zone) for s in services],
+            "faqs": [{"id": str(f.id), "question": f.question, "answer": f.answer} for f in faqs],
+            "zone_id": str(zone.id) if zone else None,
         })
 
 
@@ -219,29 +265,17 @@ class SubServiceDetailPublicView(APIView):
 
     def get(self, request, category_slug, service_slug):
         category = get_object_or_404(Category, slug=category_slug, is_active=True)
-        service = (
-            Service.objects.select_related("category")
-            .prefetch_related("packages__prices", "images", "reviews")
-            .filter(
-                category=category,
-                is_active=True,
-                slug__in=[service_slug, f"{category_slug}-{service_slug}"],
-            )
-            .first()
-        )
+        zone = resolve_zone(request.query_params)
+        service = public_services().filter(
+            category=category, slug__in=[service_slug, f"{category_slug}-{service_slug}"]
+        ).first()
         if not service:
             get_object_or_404(Service, slug="__missing__")
-        siblings = (
-            Service.objects.select_related("category")
-            .prefetch_related("packages__prices", "images", "reviews")
-            .filter(category=category, is_active=True)
-            .exclude(id=service.id)
-            .order_by("sort_order", "name")[:12]
-        )
+        siblings = public_services().filter(category=category).exclude(id=service.id).order_by("sort_order", "name")[:12]
         return Response({
             "category": serialize_category(category),
-            "service": serialize_service(service),
-            "related_services": [serialize_service(s) for s in siblings],
+            "service": serialize_quick_view(service, zone),
+            "related_services": [serialize_service(s, zone) for s in siblings],
         })
 
 
@@ -305,11 +339,30 @@ class ServiceListView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        services = Service.objects.select_related("category").prefetch_related("packages", "images").filter(is_active=True, category__is_active=True)
-        query = request.query_params.get("q", "").strip()
+        params = request.query_params
+        zone = resolve_zone(params)
+        services = public_services()
+        query = params.get("q", "").strip()
         if query:
             services = services.filter(name__icontains=query[:100])
-        return Response({"services": [serialize_service(s) for s in services[:100]]})
+        if params.get("category"):
+            services = services.filter(category__slug=params["category"].strip()[:120])
+        try:
+            limit = max(1, min(int(params.get("limit", 0)) or 100, 100))
+        except ValueError:
+            raise serializers.ValidationError({"limit": "Use a whole number."})
+        if params.get("popular") in ("true", "1"):
+            limit = min(limit if params.get("limit") else 4, 12)
+            ordered = services.order_by("sort_order", "name")
+            picked = list(ordered.filter(is_popular=True)[:limit])
+            for extra in (ordered.filter(is_featured=True), ordered):
+                if len(picked) >= limit:
+                    break
+                taken = [s.id for s in picked]
+                picked += list(extra.exclude(id__in=taken)[:limit - len(picked)])
+            return Response({"services": [serialize_service(s, zone) for s in picked]})
+        services = services.order_by("sort_order", "name")[:limit]
+        return Response({"services": [serialize_service(s, zone) for s in services]})
 
 
 class ServiceImageView(APIView):
@@ -431,20 +484,42 @@ class ServiceReviewListView(APIView):
             service = get_object_or_404(Service, id=service_id, is_active=True)
         except ValueError:
             service = get_object_or_404(Service, slug=service_id, is_active=True)
-        reviews = Review.objects.filter(service=service, is_visible=True).select_related(
+        all_reviews = Review.objects.filter(service=service, is_visible=True)
+        agg = all_reviews.aggregate(average_rating=Avg("rating"), review_count=Count("id"))
+        breakdown = rating_breakdown(all_reviews)
+
+        params = request.query_params
+        filtered = all_reviews
+        if params.get("rating"):
+            rating = serializers.IntegerField(min_value=1, max_value=5).run_validation(params["rating"])
+            filtered = filtered.filter(rating=rating)
+        if params.get("with_comment") in ("true", "1"):
+            filtered = filtered.exclude(comment="")
+        if params.get("with_photo") in ("true", "1"):
+            filtered = filtered.filter(Q(photo_url__gt="") | (Q(photo__isnull=False) & ~Q(photo="")))
+        page_size = serializers.IntegerField(min_value=1, max_value=50).run_validation(params.get("page_size", 10))
+        page = serializers.IntegerField(min_value=1).run_validation(params.get("page", 1))
+        count = filtered.count()
+        start = (page - 1) * page_size
+        rows = filtered.select_related(
             "customer", "technician", "booking__address", "service__category"
-        ).order_by("-created_at")
-        agg = reviews.aggregate(average_rating=Avg("rating"), review_count=Count("id"))
-        breakdown = {str(star): 0 for star in (5, 4, 3, 2, 1)}
-        for row in reviews.values("rating").annotate(cnt=Count("id")):
-            key = str(row["rating"])
-            if key in breakdown:
-                breakdown[key] = row["cnt"]
+        ).order_by("-created_at")[start:start + page_size]
+
+        def page_link(number):
+            query = params.copy()
+            query["page"] = number
+            return request.build_absolute_uri(f"{request.path}?{query.urlencode()}")
+
         return Response({
             "average_rating": round(agg["average_rating"], 1) if agg["average_rating"] else None,
             "review_count": agg["review_count"],
             "rating_breakdown": breakdown,
-            "results": [_serialize_review(r) for r in reviews[:50]],
+            "count": count,
+            "page": page,
+            "page_size": page_size,
+            "next": page_link(page + 1) if start + page_size < count else None,
+            "previous": page_link(page - 1) if page > 1 else None,
+            "results": [_serialize_review(r) for r in rows],
         })
 
 

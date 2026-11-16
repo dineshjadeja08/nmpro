@@ -50,8 +50,21 @@ def ranked_candidates(booking, rule=None):
         is_online=True, skills__code=booking.package.skill_code, skills__is_verified=True,
         zones__zone=booking.slot.zone).distinct().select_related("user").annotate(
         active_jobs=Count("assignments", filter=~Q(assignments__status__in=["SERVICE_COMPLETED", "CANCELLED"]), distinct=True))
+    from django.conf import settings as dj_settings
+
+    from domains.technicians.models import TechnicianJoiningFee
+    from domains.technicians.partner import leads_this_term
+
+    fees = {f.technician_id: f for f in TechnicianJoiningFee.objects.filter(technician__in=profiles)}
+    cap = dj_settings.TECHNICIAN_LEADS_PER_YEAR
     candidates = []
     for profile in profiles:
+        fee = fees.get(profile.id)
+        if not fee or not fee.membership_active:
+            continue  # leads only go to technicians with an active (paid) membership year
+        leads = leads_this_term(profile, fee)
+        if cap and leads >= cap:
+            continue
         if not eligible(profile, booking):
             continue
         if JobAssignment.objects.filter(technician=profile, booking__slot__start_at__lt=end,
@@ -59,10 +72,12 @@ def ranked_candidates(booking, rule=None):
             continue
         score = rule.weight_availability - rule.weight_workload * profile.active_jobs
         candidates.append({"id": str(profile.id), "name": profile.display_name,
-            "score": score, "workload": profile.active_jobs,
+            "score": score, "workload": profile.active_jobs, "leads_this_year": leads,
             "reasons": ["Verified skill", "Assigned service zone", "Working hours and travel buffer available",
-                        f"{profile.active_jobs} active jobs"]})
-    return sorted(candidates, key=lambda c: (-c["score"], c["workload"], c["id"]))
+                        f"{profile.active_jobs} active jobs",
+                        f"{leads} leads this membership year" + (f" of {cap}" if cap else "")]})
+    # Fair sharing: whoever has received the fewest leads this membership year comes first.
+    return sorted(candidates, key=lambda c: (c["leads_this_year"], -c["score"], c["workload"], c["id"]))
 
 
 @transaction.atomic
@@ -146,7 +161,7 @@ def assign_job(actor, booking_id, technician_id, expected_version, reason="", re
         BookingStatusEvent.objects.create(booking=booking, from_status=old_b_status,
                                           to_status="TECHNICIAN_ASSIGNED", actor=actor,
                                           reason=reason or ("Technician reassigned" if action == "JOB_REASSIGNED" else "Technician assigned"))
-    notify(profile.user, "TECHNICIAN_ASSIGNED", booking)
+    # The technician gets "TECHNICIAN_JOB_ASSIGNED" from domains.technicians.messaging when the assignment is created.
     notify(booking.user, "TECHNICIAN_REASSIGNED" if action == "JOB_REASSIGNED" else "TECHNICIAN_ASSIGNED", booking)
     log(actor, action, "JobAssignment", current.id, {"reason": reason})
     return current

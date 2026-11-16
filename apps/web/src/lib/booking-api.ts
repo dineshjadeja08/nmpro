@@ -1,3 +1,5 @@
+import type { Service } from "@nammapros/types";
+
 export type Package = { id: string; name: string; pricing_model: "FIXED_PRICE" | "INSPECTION_BASED"; duration_minutes: number; inclusions: string[]; exclusions: string[] };
 export type Address = { id: string; line_1: string; label: string; contact_name: string; contact_phone: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; landmark: string; latitude?: number | null; longitude?: number | null; is_default: boolean };
 export type Slot = { id: string; start_at: string; end_at: string; remaining: number; version: number };
@@ -24,7 +26,14 @@ export type Quote = {
   payment_policy: "PREPAID" | "PAY_AT_VISIT" | "ADVANCE";
   advance_type?: string;
   advance_percentage?: number;
+  discount_paise?: number;
+  coupon_code?: string | null;
 };
+export type QuoteItem = { package_id: string; quantity: number };
+export type PublicOffer = { code: string; description: string; discount_type: "PERCENT" | "FLAT"; value: number; max_discount_paise: number | null; min_order_paise: number; valid_until: string | null; first_booking_only: boolean };
+export type ReferralSummary = { code: string; referee_discount_paise: number; reward_paise: number; pending_count: number; rewarded_count: number; rewards: { code: string; amount_paise: number; valid_until: string | null; used: boolean }[] };
+export type TechnicianLocation = { sharing: boolean; status: string | null; latitude?: number; longitude?: number; accuracy_m?: number | null; updated_at?: string; destination: { latitude: number; longitude: number } | null };
+export type ServerCart = { id: string; item_count?: number; items: Array<{ id: string; service_id: string; service_slug: string; service_name: string; package_id: string | null; package_name: string | null; quantity: number }>; skipped?: { service_id: string; reason: string }[] };
 export type LocationSuggestion = { id: string; description: string; main_text: string; secondary_text: string };
 export type ResolvedLocation = { formatted_address: string; house_flat: string; street: string; locality: string; city: string; state: string; postal_code: string; latitude: number | null; longitude: number | null };
 export type ServiceAreaInfo = { id: string; name: string; city: string; state: string; postal_code: string };
@@ -36,6 +45,7 @@ export type Booking = {
   payment_status: string;
   payment_expires_at?: string | null;
   invoice_available?: boolean;
+  receipt_available?: boolean;
   payment_attempt_unresolved?: boolean;
   version: number;
   problem_description?: string;
@@ -128,7 +138,12 @@ export async function bookingRequest<T>(path: string, method = "GET", body?: unk
 }
 
 export const bookingApi = {
-  me: () => bookingRequest<{ id: number; phone_e164: string }>("/auth/me/"),
+  // Uses the always-200 session check so signed-out visitors don't produce a failed request.
+  me: async () => {
+    const session = await bookingRequest<{ authenticated: boolean; id?: number; phone_e164?: string }>("/auth/session/");
+    if (!session.authenticated || session.id == null) throw new BookingApiError("Sign in to continue.", 401, "NOT_AUTHENTICATED");
+    return { id: session.id, phone_e164: session.phone_e164 ?? "" };
+  },
   firebaseAuth: async (idToken: string) => {
     const result = await bookingRequest<{ id: number; phone_e164: string }>("/auth/firebase/", "POST", { id_token: idToken });
     await refreshCsrf();
@@ -155,10 +170,24 @@ export const bookingApi = {
   },
   hold: (package_id: string, address_id: string, slot_id: string) => bookingRequest<Hold>("/checkout/holds/", "POST", { package_id, address_id, slot_id }),
   release: (id: string) => bookingRequest<void>(`/checkout/holds/${id}/`, "DELETE"),
-  quote: (hold_id: string, items?: Array<{ package_id: string; quantity: number }>) =>
-    bookingRequest<Quote>("/checkout/quote/", "POST", items && items.length > 0 ? { hold_id, items } : { hold_id }),
+  quote: (hold_id: string, items?: QuoteItem[], coupon_code?: string) =>
+    bookingRequest<Quote>("/checkout/quote/", "POST", {
+      hold_id,
+      ...(items && items.length > 0 ? { items } : {}),
+      ...(coupon_code ? { coupon_code } : {}),
+    }),
+  offers: () => bookingRequest<{ offers: PublicOffer[] }>("/offers/"),
+  referral: () => bookingRequest<ReferralSummary>("/referrals/me/"),
+  mergeCart: (items: Array<{ service_id: string; package_id: string; quantity: number }>) =>
+    bookingRequest<ServerCart>("/cart/merge/", "POST", { items }),
+  quickView: (slug: string, pincode?: string) =>
+    bookingRequest<Service>(`/services/${encodeURIComponent(slug)}/${pincode ? `?pincode=${encodeURIComponent(pincode)}` : ""}`),
+  zoneServices: (pincode: string) =>
+    bookingRequest<{ services: Service[] }>(`/services/?pincode=${encodeURIComponent(pincode)}&limit=100`),
+  technicianLocation: (bookingId: string) =>
+    bookingRequest<TechnicianLocation>(`/bookings/${encodeURIComponent(bookingId)}/technician-location/`),
   confirm: (hold_id: string, quote_id: string, accepted_total_paise: number, key: string, problem_description = "") => bookingRequest<Booking>("/bookings/", "POST", { hold_id, quote_id, accepted_total_paise, terms_accepted: true, problem_description }, key),
-  cart: () => bookingRequest<{ id: string; items: Array<{ id: string; service_id: string; service_slug: string; service_name: string; package_id: string | null; package_name: string | null; quantity: number }> }>("/cart/"),
+  cart: () => bookingRequest<ServerCart>("/cart/"),
   putCartItem: (serviceId: string, packageId: string, quantity: number) =>
     bookingRequest<{ id: string; items: unknown[] }>(`/cart/items/${encodeURIComponent(serviceId)}/`, "PUT", { package_id: packageId, quantity }),
   deleteCartItem: (serviceId: string, packageId?: string) =>
@@ -180,6 +209,7 @@ export const bookingApi = {
   },
   quotations: (id: string) => bookingRequest<{ quotations: JobQuotation[] }>(`/bookings/${id}/quotations/`),
   quotationDecision: (id: string, quoteId: string, action: "approve" | "reject") => bookingRequest<JobQuotation>(`/bookings/${id}/quotations/${quoteId}/${action}/`, "POST"),
+  receiptUrl: (id: string) => `${base}/api/v1/bookings/${encodeURIComponent(id)}/receipt/`,
   invoiceUrl: (id: string) => `${base}/api/v1/bookings/${encodeURIComponent(id)}/invoice/`,
   notificationPreferences: () => bookingRequest<NotificationPreferences>("/customers/notification-preferences/"),
   saveNotificationPreferences: (values: NotificationPreferences) => bookingRequest<NotificationPreferences>("/customers/notification-preferences/", "PUT", values),

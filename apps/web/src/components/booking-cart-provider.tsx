@@ -112,12 +112,22 @@ export function BookingCartProvider({ children }: { children: React.ReactNode })
   const syncCartWithServer = useCallback(async () => {
     const current = itemsRef.current;
     if (current.length === 0) return;
-    await Promise.allSettled(
-      current.map((entry) =>
-        bookingApi.putCartItem?.(entry.service.id, entry.pkg.id, entry.quantity)
-      )
-    );
-  }, []);
+    // Save the guest cart (kept in this browser) to the account in one call after sign-in.
+    try {
+      const result = await bookingApi.mergeCart(
+        current.map((entry) => ({ service_id: entry.service.id, package_id: entry.pkg.id, quantity: entry.quantity }))
+      );
+      const skipped = new Set((result.skipped ?? []).map((s) => s.service_id));
+      if (skipped.size > 0) {
+        const kept = itemsRef.current.filter((entry) => !skipped.has(entry.service.id));
+        itemsRef.current = kept;
+        setItems(kept);
+        showToast("Some services are no longer available and were removed from your cart");
+      }
+    } catch {
+      // Not signed in or offline: the cart stays in this browser and syncs next time.
+    }
+  }, [showToast]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

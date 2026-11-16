@@ -128,7 +128,7 @@ export default async function CategoryOrServicePage({ params }: { params: Promis
           <section className="border-b border-[#EAE3DC] bg-white py-8 sm:py-10">
             <div className="container">
               <nav className="breadcrumbs mb-2 text-xs text-[#57534E]" aria-label="Breadcrumb">
-                <Link href="/" className="hover:text-[#800020]">Home</Link> / <span>{category.name}</span>
+                <Link href="/" className="underline underline-offset-2 hover:text-[#800020]">Home</Link> / <span>{category.name}</span>
               </nav>
               <h1 className="font-serif text-3xl font-bold tracking-tight text-[#1C1917] sm:text-4xl">
                 {category.banner_title || category.name}

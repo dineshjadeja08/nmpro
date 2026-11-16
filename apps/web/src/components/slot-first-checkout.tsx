@@ -24,13 +24,13 @@ import {
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getPackageUnitPaise, pickDefaultPackage, useBookingCart } from "@/components/booking-cart-provider";
 import { GoogleMapsLocationPicker, type PickedLocationResult } from "@/components/google-maps-location-picker";
 import { useServiceLocation } from "@/components/location-provider";
 import { QuickOtpSheet } from "@/components/quick-otp-sheet";
 import { ServiceImage } from "@/components/service-image";
-import { bookingApi, BookingApiError, type Address, type Booking, type Hold, type Quote, type Slot } from "@/lib/booking-api";
+import { bookingApi, BookingApiError, type Address, type Booking, type Hold, type PublicOffer, type Quote, type QuoteItem, type Slot } from "@/lib/booking-api";
 import { serviceHeroImage } from "@/lib/service-images";
 
 const STEPS = ["1. Slot", "2. Address", "3. Confirm"] as const;
@@ -220,6 +220,12 @@ export function SlotFirstCheckout({
   // Hold, Quote, Confirmation (Step 2)
   const [hold, setHold] = useState<Hold | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
+  // Cart items sent with the quote; reused for coupon changes and expiry refreshes.
+  const quoteItemsRef = useRef<QuoteItem[] | undefined>(undefined);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponError, setCouponError] = useState("");
+  const [couponBusy, setCouponBusy] = useState(false);
+  const [offers, setOffers] = useState<PublicOffer[]>([]);
   const [termsAccepted, setTermsAccepted] = useState(true);
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
@@ -525,8 +531,11 @@ export function SlotFirstCheckout({
         activeCartItems.length > 1 || (activeCartItems[0]?.quantity ?? 1) > 1
           ? activeCartItems.map((ci) => ({ package_id: ci.pkg.id, quantity: ci.quantity }))
           : undefined;
+      quoteItemsRef.current = quoteItemsPayload;
       const nextQuote = await bookingApi.quote(nextHold.id, quoteItemsPayload);
       setQuote(nextQuote);
+      setCouponInput("");
+      setCouponError("");
       setIdempotencyKey(typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `np-${Date.now()}`);
       setMessage("");
       setStep(2);
@@ -619,6 +628,31 @@ export function SlotFirstCheckout({
     }
   }
 
+  useEffect(() => {
+    if (step !== 2 || offers.length > 0) return;
+    let active = true;
+    bookingApi.offers().then((res) => active && setOffers(res.offers)).catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [step, offers.length]);
+
+  async function applyCoupon(rawCode: string) {
+    if (!hold) return;
+    const code = rawCode.trim().toUpperCase();
+    setCouponError("");
+    setCouponBusy(true);
+    try {
+      const next = await bookingApi.quote(hold.id, quoteItemsRef.current, code || undefined);
+      setQuote(next);
+      if (code) setCouponInput(code);
+    } catch (err) {
+      setCouponError(err instanceof Error ? err.message : "This code could not be applied.");
+    } finally {
+      setCouponBusy(false);
+    }
+  }
+
   async function handleConfirmBooking() {
     if (!hold || !quote || !termsAccepted) return;
     setBusy(true);
@@ -627,7 +661,7 @@ export function SlotFirstCheckout({
       // Silently refresh the quote in the background if close to expiry
       let activeQuote = quote;
       if (new Date(quote.expires_at).getTime() - Date.now() < 30000) {
-        activeQuote = await bookingApi.quote(hold.id);
+        activeQuote = await bookingApi.quote(hold.id, quoteItemsRef.current, quote.coupon_code ?? undefined);
         setQuote(activeQuote);
       }
       const key = idempotencyKey || `np-${Date.now()}`;
@@ -1420,13 +1454,20 @@ export function SlotFirstCheckout({
 
                 <div className="space-y-1.5 pt-1 text-xs">
                   {quote.lines
-                    .filter((l) => l.amount_paise > 0)
-                    .map((line, idx) => (
-                      <div key={`${line.code}-${line.package_id ?? idx}`} className="flex justify-between text-[#57534E]">
-                        <span>{line.name || line.code.toLowerCase().replaceAll("_", " ")}</span>
-                        <span>{formatRupees(line.amount_paise)}</span>
-                      </div>
-                    ))}
+                    .filter((l) => l.amount_paise !== 0)
+                    .map((line, idx) =>
+                      line.amount_paise < 0 ? (
+                        <div key={`${line.code}-${idx}`} className="flex justify-between font-semibold text-[#1F6B44]">
+                          <span>{line.name || "Discount"}</span>
+                          <span>−{formatRupees(-line.amount_paise)}</span>
+                        </div>
+                      ) : (
+                        <div key={`${line.code}-${line.package_id ?? idx}`} className="flex justify-between text-[#57534E]">
+                          <span>{line.name || line.code.toLowerCase().replaceAll("_", " ")}</span>
+                          <span>{formatRupees(line.amount_paise)}</span>
+                        </div>
+                      )
+                    )}
                   <div className="flex items-baseline justify-between pt-2 text-sm font-bold text-[#1C1917]">
                     <span>
                       {quote.payment_policy === "PAY_AT_VISIT" ? "To pay at visit" : "To pay now"}
@@ -1439,6 +1480,76 @@ export function SlotFirstCheckout({
                   </div>
                 </div>
               </div>
+
+              <section aria-labelledby="coupon-heading" className="rounded-md border border-dashed border-[#D6CBC0] bg-white p-3">
+                <h3 id="coupon-heading" className="text-xs font-bold text-[#1C1917]">Referral code</h3>
+                <p className="mt-0.5 text-[11px] text-[#57534E]">Comes off the online advance. You pay the professional the same balance.</p>
+                {quote.coupon_code ? (
+                  <div className="mt-2 flex items-center justify-between gap-2 rounded-md bg-[#E7F3EC] px-3 py-2 text-xs">
+                    <span className="font-semibold text-[#1F6B44]">
+                      {quote.coupon_code} applied · you save {formatRupees(quote.discount_paise ?? 0)}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={couponBusy}
+                      onClick={() => {
+                        setCouponInput("");
+                        void applyCoupon("");
+                      }}
+                      className="min-h-[36px] px-2 font-bold text-[#800020] hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    className="mt-2 flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (couponInput.trim()) void applyCoupon(couponInput);
+                    }}
+                  >
+                    <label htmlFor="coupon-code" className="sr-only">Referral code</label>
+                    <input
+                      id="coupon-code"
+                      value={couponInput}
+                      onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                      placeholder="Enter code"
+                      autoComplete="off"
+                      maxLength={24}
+                      aria-invalid={Boolean(couponError)}
+                      aria-describedby={couponError ? "coupon-error" : undefined}
+                      className="min-h-[44px] min-w-0 flex-1 rounded-md border border-[#D6CBC0] px-3 text-sm uppercase tracking-wide outline-none focus:border-[#800020]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={couponBusy || !couponInput.trim()}
+                      className="min-h-[44px] rounded-md bg-[#1C1917] px-4 text-xs font-bold text-white disabled:opacity-50"
+                    >
+                      {couponBusy ? "Checking…" : "Apply"}
+                    </button>
+                  </form>
+                )}
+                {couponError && (
+                  <p id="coupon-error" role="alert" className="mt-1.5 text-xs font-semibold text-[#B42318]">{couponError}</p>
+                )}
+                {!quote.coupon_code && offers.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {offers.slice(0, 4).map((offer) => (
+                      <button
+                        key={offer.code}
+                        type="button"
+                        disabled={couponBusy}
+                        onClick={() => void applyCoupon(offer.code)}
+                        className="min-h-[36px] rounded-full border border-[#800020]/30 bg-[#FBF1F3] px-3 text-[11px] font-semibold text-[#800020]"
+                        title={offer.description}
+                      >
+                        {offer.code} · {offer.discount_type === "PERCENT" ? `${offer.value}% off` : `${formatRupees(offer.value)} off`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
 
               <label className="flex cursor-pointer items-start gap-2.5 text-xs text-[#57534E]">
                 <input

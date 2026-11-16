@@ -56,7 +56,7 @@ class Payment(UUIDStampedModel):
     currency = models.CharField(max_length=3, default="INR")
     status = models.CharField(max_length=20, choices=[("AUTHORIZED", "Authorized"), ("CAPTURED", "Captured"),
                                                       ("FAILED", "Failed")])
-    payment_type = models.CharField(max_length=20, choices=[("INITIAL", "Initial / Advance"), ("BALANCE", "Balance")], default="INITIAL")
+    payment_type = models.CharField(max_length=20, choices=[("INITIAL", "Initial / Advance"), ("BALANCE", "Balance"), ("EXTRA_WORK", "Approved extra work")], default="INITIAL")
     payment_method = models.CharField(max_length=20, choices=[("ONLINE", "Online"), ("CASH", "Cash"), ("UPI", "Direct UPI")], default="ONLINE")
     verified_at = models.DateTimeField(null=True)
 

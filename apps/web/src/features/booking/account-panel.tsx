@@ -1,5 +1,7 @@
 "use client";
 
+import { DataRightsCard } from "@/components/data-rights-card";
+import { ReferralCard } from "@/components/referral-card";
 import {
   ArrowRight,
   Bell,
@@ -893,6 +895,8 @@ export function AccountPanel() {
               </section>
 
               <aside className="space-y-4 lg:sticky lg:top-20">
+                <ReferralCard />
+                <DataRightsCard />
                 {preferences && (
                   <section className="overflow-hidden rounded-lg border border-[#EAE3DC] bg-white shadow-[0_6px_22px_rgba(28,25,23,0.05)]">
                     <div className="flex items-center gap-2 border-b border-[#F4EFE9] bg-[#FCF9F6] px-5 py-3.5">

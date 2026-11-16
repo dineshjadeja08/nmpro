@@ -150,8 +150,18 @@ def test_advance_payment_flow_percentage(integration_setup, monkeypatch):
     assert booking.payment_status == "ADVANCE_PAID"
 
     # 6. Remaining Balance Flow: At-visit collection (e.g. Cash / UPI)
-    collect_resp = client.post(f"/api/v1/bookings/{booking_id}/balance-collect/", {"method": "CASH"}, format="json")
-    assert collect_resp.status_code == 200
+    # The customer must not be able to mark their own balance as collected.
+    denied = client.post(f"/api/v1/bookings/{booking_id}/balance-collect/", {"method": "CASH"}, format="json")
+    assert denied.status_code == 403
+    booking.refresh_from_db()
+    assert booking.payment_status == "ADVANCE_PAID"
+    from domains.administration.models import StaffRole
+    ops_user = get_user_model().objects.create_user(username="ops-collector", phone_e164="+919811100001")
+    StaffRole.objects.create(user=ops_user, role="DISPATCH_OPERATOR", assigned_by=ops_user)
+    ops_client = APIClient()
+    ops_client.force_authenticate(user=ops_user)
+    collect_resp = ops_client.post(f"/api/v1/bookings/{booking_id}/balance-collect/", {"method": "CASH"}, format="json")
+    assert collect_resp.status_code == 200, collect_resp.content
     booking.refresh_from_db()
     assert booking.payment_status == "PAID"
     assert booking.payments.count() == 2  # 1 advance payment, 1 balance payment

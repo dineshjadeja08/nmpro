@@ -35,6 +35,9 @@ class TechnicianProfile(UUIDStampedModel):
         "REGISTERED", "PENDING_DOCUMENTS", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED")], default="REGISTERED")
     is_active = models.BooleanField(default=False)
     is_online = models.BooleanField(default=False)
+    # Set by admin: the partner app only lets this number sign in after KYC approval AND this switch.
+    app_login_enabled = models.BooleanField(default=False)
+    app_login_changed_at = models.DateTimeField(null=True, blank=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     verified_at = models.DateTimeField(null=True, blank=True)
 
@@ -105,7 +108,7 @@ class TechnicianDocument(UUIDStampedModel):
     assignment = models.ForeignKey("technicians.JobAssignment", on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="photos")
     kind = models.CharField(max_length=24, choices=[(s, s) for s in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT")])
-    file = models.FileField(upload_to="private/technicians/%Y/%m/")
+    file = models.FileField(upload_to="private/technicians/%Y/%m/", null=True, blank=True)  # emptied when purged
     content_type = models.CharField(max_length=50)
     status = models.CharField(max_length=20, default="PENDING")
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True)
@@ -146,6 +149,11 @@ class JobAssignment(UUIDStampedModel):
     status = models.CharField(max_length=36, default="ASSIGNED")
     assigned_at = models.DateTimeField()
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Last GPS position shared by the technician while travelling (cleared once work starts).
+    last_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    last_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    last_accuracy_m = models.PositiveIntegerField(null=True, blank=True)
+    last_location_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=["technician", "status"])]
@@ -215,3 +223,33 @@ class TechnicianEarning(UUIDStampedModel):
     compensation_rule = models.ForeignKey(TechnicianCompensationRule, on_delete=models.PROTECT, null=True, blank=True)
     commission_rule = models.ForeignKey("administration.CommissionRule", on_delete=models.PROTECT, null=True, blank=True)
     calculation_snapshot = models.JSONField(default=dict)
+
+
+class TechnicianJoiningFee(UUIDStampedModel):
+    """One-time joining fee a technician pays NammaPros for leads (online via Razorpay, or recorded by staff)."""
+    STATUSES = [("PENDING", "Not paid"), ("PAID", "Paid"), ("WAIVED", "Waived by staff")]
+    METHODS = [("ONLINE", "Online (Razorpay)"), ("CASH", "Cash"), ("BANK_TRANSFER", "Bank transfer"), ("UPI", "UPI"),
+               ("WAIVED", "Waived")]
+
+    technician = models.OneToOneField(TechnicianProfile, on_delete=models.PROTECT, related_name="joining_fee")
+    amount_paise = models.PositiveBigIntegerField()
+    status = models.CharField(max_length=10, choices=STATUSES, default="PENDING")
+    method = models.CharField(max_length=16, choices=METHODS, blank=True, default="")
+    provider_order_id = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    provider_payment_id = models.CharField(max_length=64, blank=True, default="")
+    reference = models.CharField(max_length=80, blank=True, default="")
+    paid_at = models.DateTimeField(null=True, blank=True)
+    # Membership year bought by this payment. Leads stop after this date until renewed.
+    valid_until = models.DateTimeField(null=True, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+")
+
+    @property
+    def settled(self):
+        return self.status in ("PAID", "WAIVED")
+
+    @property
+    def membership_active(self):
+        from django.utils import timezone
+
+        return self.settled and self.valid_until is not None and self.valid_until > timezone.now()

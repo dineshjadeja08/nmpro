@@ -18,6 +18,8 @@ from domains.technicians.tasks import (
     expire_job_offers, expire_job_quotations, reconcile_technician_earnings,
 )
 from domains.notifications.models import Notification
+from domains.users.data_rights import purge_expired_kyc_documents
+from domains.notifications.messages import queue_review_requests
 
 log = logging.getLogger("nammapros.periodic")
 
@@ -30,7 +32,7 @@ SCHEDULE = [
     (1, dispatch_email_notifications), (5, flag_uncertain_notification_submissions),
     (1, expire_job_offers), (5, expire_job_quotations), (5, reconcile_technician_earnings),
     (1, process_automatic_dispatch), (1, evaluate_sla), (1, remind_lead_follow_ups),
-    (5, reconcile_admin_ledger),
+    (5, reconcile_admin_ledger), (60, purge_expired_kyc_documents), (15, queue_review_requests),
 ]
 
 

@@ -74,6 +74,9 @@ type TechnicianDetail = {
   joined_at: string | null;
   languages: string[];
   whatsapp_notifications_enabled: boolean;
+  app_login_enabled?: boolean;
+  app_login_changed_at?: string | null;
+  joining_fee?: { amount_paise: number; status: "PENDING" | "PAID" | "WAIVED"; method: string; reference: string; paid_at: string | null; settled: boolean; valid_until?: string | null; membership_active?: boolean; leads_this_year?: number; leads_per_year?: number | null } | null;
   internal_notes: string;
   status: string;
   background_verification_status: string;
@@ -257,6 +260,9 @@ export function AdminTechniciansDirectory({ canEdit }: { canEdit: boolean }) {
         <div className="flex flex-wrap gap-1.5">
           <AdminStatusBadge status={t.is_active ? "ACTIVE" : "INACTIVE"} />
           <AdminStatusBadge status={String(t.status || "PENDING")} />
+          {t.app_login_enabled ? (
+            <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">App login on</span>
+          ) : null}
         </div>
       ),
     },
@@ -451,6 +457,43 @@ export function AdminTechnicianWorkspace({ technicianId, canEdit }: { technician
 
   // Profile editor state
   const [editForm, setEditForm] = useState<Record<string, unknown>>({});
+
+  const [appLoginBusy, setAppLoginBusy] = useState(false);
+  const [feeForm, setFeeForm] = useState({ status: "PAID", method: "BANK_TRANSFER", reference: "" });
+  const recordFee = async () => {
+    if (!data) return;
+    setAppLoginBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const updated = await api<TechnicianDetail>(`/admin/technicians/${technicianId}/`, "PATCH", {
+        joining_fee: { status: feeForm.status, method: feeForm.status === "WAIVED" ? "WAIVED" : feeForm.method, reference: feeForm.reference },
+      });
+      setData(updated);
+      setNotice(feeForm.status === "WAIVED" ? "Joining fee waived." : "Joining fee recorded as paid.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not record the joining fee.");
+    } finally {
+      setAppLoginBusy(false);
+    }
+  };
+  const toggleAppLogin = async () => {
+    if (!data) return;
+    setAppLoginBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const updated = await api<TechnicianDetail>(`/admin/technicians/${technicianId}/`, "PATCH", {
+        app_login_enabled: !data.app_login_enabled,
+      });
+      setData(updated);
+      setNotice(updated.app_login_enabled ? "Partner app login switched on." : "Partner app login switched off.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change app login.");
+    } finally {
+      setAppLoginBusy(false);
+    }
+  };
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -773,6 +816,69 @@ export function AdminTechnicianWorkspace({ technicianId, canEdit }: { technician
 
             {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs font-semibold text-red-800">{error}</div>}
             {notice && <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800">{notice}</div>}
+
+            {tab === "profile" && !editing && (
+              <section aria-labelledby="app-login-heading" className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="min-w-0">
+                  <h2 id="app-login-heading" className="text-sm font-bold text-slate-900">Partner app login</h2>
+                  <p className="mt-1 max-w-xl text-xs text-slate-600">
+                    {data.background_verification_status !== "VERIFIED" || !data.is_active
+                      ? "Approve the KYC and activate this technician first. Then switch on app login so they can sign in with OTP on "
+                      : data.app_login_enabled
+                        ? "This technician can sign in to the partner app with OTP on "
+                        : "KYC is approved. Switch on app login to let this technician sign in with OTP on "}
+                    <strong>{data.phone}</strong>.
+                  </p>
+                  <p className="mt-2 text-xs text-slate-700">
+                    <strong>Joining fee:</strong>{" "}
+                    {data.joining_fee
+                      ? `₹${(data.joining_fee.amount_paise / 100).toLocaleString("en-IN")} · ${data.joining_fee.status === "PENDING" ? "Not paid" : data.joining_fee.status === "WAIVED" ? "Waived" : `Paid (${data.joining_fee.method.replace("_", " ").toLowerCase()}${data.joining_fee.reference ? `, ref ${data.joining_fee.reference}` : ""})`}`
+                      : "No joining fee on record"}
+                    {data.joining_fee?.valid_until && (
+                      <> · Membership {data.joining_fee.membership_active ? "valid until" : "ended"} {new Date(data.joining_fee.valid_until).toLocaleDateString("en-IN")}
+                        {" "}· Leads this year: {data.joining_fee.leads_this_year ?? 0}{data.joining_fee.leads_per_year ? ` / ${data.joining_fee.leads_per_year}` : ""}</>
+                    )}
+                  </p>
+                  {!data.joining_fee?.membership_active && (
+                    <div className="mt-2 flex flex-wrap items-end gap-2">
+                      <label className="text-[11px] font-semibold text-slate-600">Record
+                        <select className="mt-0.5 block rounded border border-slate-300 px-2 py-1.5 text-xs" value={feeForm.status} onChange={(e) => setFeeForm({ ...feeForm, status: e.target.value })}>
+                          <option value="PAID">Paid outside the app</option>
+                          <option value="WAIVED">Waive fee</option>
+                        </select>
+                      </label>
+                      {feeForm.status === "PAID" && (
+                        <label className="text-[11px] font-semibold text-slate-600">Method
+                          <select className="mt-0.5 block rounded border border-slate-300 px-2 py-1.5 text-xs" value={feeForm.method} onChange={(e) => setFeeForm({ ...feeForm, method: e.target.value })}>
+                            <option value="BANK_TRANSFER">Bank transfer</option>
+                            <option value="UPI">UPI</option>
+                            <option value="CASH">Cash</option>
+                          </select>
+                        </label>
+                      )}
+                      <label className="text-[11px] font-semibold text-slate-600">Reference / UTR
+                        <input className="mt-0.5 block w-36 rounded border border-slate-300 px-2 py-1.5 text-xs" maxLength={80} value={feeForm.reference} onChange={(e) => setFeeForm({ ...feeForm, reference: e.target.value })} />
+                      </label>
+                      <button type="button" disabled={appLoginBusy} onClick={recordFee} className="rounded bg-slate-800 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Save</button>
+                    </div>
+                  )}
+                  {data.app_login_changed_at && (
+                    <p className="mt-1 text-[11px] text-slate-400">Last changed {new Date(data.app_login_changed_at).toLocaleString("en-IN")}</p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(data.app_login_enabled)}
+                  aria-labelledby="app-login-heading"
+                  disabled={appLoginBusy || (!data.app_login_enabled && (data.background_verification_status !== "VERIFIED" || !data.is_active || !data.joining_fee?.membership_active))}
+                  onClick={toggleAppLogin}
+                  className={`inline-flex min-h-[40px] items-center gap-2 rounded-full px-4 text-xs font-bold text-white disabled:opacity-50 ${data.app_login_enabled ? "bg-emerald-700" : "bg-slate-500"}`}
+                >
+                  {data.app_login_enabled ? "App login ON — turn off" : "App login OFF — turn on"}
+                </button>
+              </section>
+            )}
 
             {/* TAB 1: PROFILE */}
             {tab === "profile" && (

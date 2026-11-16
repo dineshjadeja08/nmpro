@@ -38,6 +38,8 @@ import { AdminStatusBadge } from "./admin/admin-status-badge";
 import { AdminErrorState } from "./admin/admin-error-state";
 import { AdminEmptyState } from "./admin/admin-empty-state";
 import { AdminBookingDrawer } from "./admin-booking-drawer";
+import { CouponsManager } from "./admin-coupons";
+import { DataRequestsManager } from "./admin-data-requests";
 
 type Me = { id: number; phone_e164: string; roles: string[]; capabilities: string[] };
 type Field = { key: string; label?: string; type?: "number" | "date" | "datetime-local" | "checkbox" | "json"; required?: boolean };
@@ -271,7 +273,7 @@ export default function Portal() {
     if (
       !me ||
       !resource ||
-      ["/technicians/verification", "/technicians", "/leads/create", "/reviews", "/faqs", "/website/banners"].includes(path) ||
+      ["/technicians/verification", "/technicians", "/leads/create", "/reviews", "/faqs", "/website/banners", "/website/offers", "/data-requests"].includes(path) ||
       isServicesSection ||
       detailMatch?.[1] === "technicians"
     ) {
@@ -418,7 +420,7 @@ export default function Portal() {
     );
   }
 
-  const isList = !!config && !detailMatch && !["/dashboard", "/reports", "/leads", "/leads/create", "/reviews", "/faqs", "/website/banners", "/website/carousel", "/services", "/services/categories", "/technicians"].includes(path);
+  const isList = !!config && !detailMatch && !["/dashboard", "/reports", "/leads", "/leads/create", "/reviews", "/faqs", "/website/banners", "/website/carousel", "/website/offers", "/data-requests", "/services", "/services/categories", "/technicians"].includes(path);
   const list = pickRows(data);
   const metricSource = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
   const metrics = path === "/dashboard" ? (metricSource.metrics as Record<string, unknown> | undefined) : undefined;
@@ -704,6 +706,12 @@ export default function Portal() {
 
           {/* Reviews Moderation */}
           {path === "/reviews" && <ReviewsManager />}
+
+          {/* Offer & referral codes */}
+          {path === "/website/offers" && <CouponsManager />}
+
+          {/* Personal data deletion requests */}
+          {path === "/data-requests" && <DataRequestsManager />}
 
           {/* FAQs Publishing */}
           {path === "/faqs" && <FaqManager />}

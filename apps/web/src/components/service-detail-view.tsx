@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import React, { useMemo, useState } from "react";
 import { getPackageUnitPaise, pickDefaultPackage, useBookingCart } from "@/components/booking-cart-provider";
+import { useZoneService } from "@/components/zone-pricing-provider";
 import { ServiceImage } from "@/components/service-image";
 import { resolveUploadedMediaUrl, serviceBannerImage, serviceMainImage } from "@/lib/service-images";
 import { formatStartingPrice } from "@/lib/services";
@@ -53,7 +54,7 @@ const DEFAULT_PROCESS_STEPS: ServiceProcessStep[] = [
 
 export function ServiceDetailView({
   category,
-  service,
+  service: baseService,
   relatedServices,
   reviewSummary,
 }: {
@@ -67,6 +68,7 @@ export function ServiceDetailView({
     results: PublicReview[];
   };
 }) {
+  const service = useZoneService(baseService);
   const { items: cartItems, totalCount: cartCount, totalPaise: cartTotalPaise, addToCart, updateItemQuantity, openSheet } = useBookingCart();
 
   const galleryUrls = useMemo(() => {
@@ -181,7 +183,7 @@ export function ServiceDetailView({
       <section className="border-b border-[#E8E1DB] bg-[#FBF8F5]">
         <div className="container py-6 sm:py-8">
           <nav className="mb-5 text-xs text-[#57534E]" aria-label="Breadcrumb">
-            <Link href="/" className="hover:text-[#800020]">Home</Link> /{" "}
+            <Link href="/" className="underline underline-offset-2 hover:text-[#800020]">Home</Link> /{" "}
             <Link href="/services" className="hover:text-[#800020]">Services</Link> /{" "}
             <Link href={`/services/${encodeURIComponent(category.slug)}`} className="hover:text-[#800020]">
               {category.name}

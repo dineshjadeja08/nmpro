@@ -55,6 +55,77 @@ class CsrfView(APIView):
         return Response({"csrf_token": get_token(request._request)})
 
 
+def issue_otp(phone):
+    """Create an OTP challenge for a phone (rate limited). Returns the response body."""
+    now = timezone.now()
+    latest = OTPChallenge.objects.filter(phone_e164=phone).order_by("-created_at").first()
+    if latest and latest.created_at > now - timedelta(seconds=60):
+        raise TooManyRequests("Wait one minute before requesting another code.")
+    if OTPChallenge.objects.filter(phone_e164=phone, created_at__gte=now - timedelta(hours=1)).count() >= 5:
+        raise TooManyRequests()
+    if settings.ENVIRONMENT in {"staging", "production"}:
+        try:
+            get_otp_provider().send(phone)
+        except MSG91Unavailable as exc:
+            raise ProviderUnavailable() from exc
+        code = None
+    else:
+        code = f"{secrets.randbelow(10 ** settings.OTP_CODE_LENGTH):0{settings.OTP_CODE_LENGTH}d}"
+    challenge = OTPChallenge.objects.create(phone_e164=phone, code_hash=make_password(code),
+                                            expires_at=now + timedelta(minutes=5))
+    body = {"challenge_id": str(challenge.id), "expires_at": challenge.expires_at}
+    if code is not None:
+        body["development_code"] = code
+    return body
+
+
+def consume_otp(phone, challenge_id, code):
+    """Check and use up an OTP. Returns False for a wrong code; raises for expired/locked challenges.
+
+    Must run inside a transaction (the challenge row is locked).
+    """
+    challenge_id = serializers.UUIDField().run_validation(challenge_id)
+    if not isinstance(code, str) or not re.fullmatch(rf"\d{{{settings.OTP_CODE_LENGTH}}}", code):
+        raise ValidationError({"code": ["Enter the configured verification code."]})
+    challenge = OTPChallenge.objects.select_for_update().filter(id=challenge_id, phone_e164=phone).first()
+    if not challenge or challenge.consumed_at or challenge.expires_at <= timezone.now():
+        raise ValidationError({"code": ["This code expired. Request a new one."]})
+    if challenge.attempts >= 5:
+        raise TooManyRequests("Too many code attempts. Request a new code.")
+    challenge.attempts += 1
+    if settings.ENVIRONMENT in {"staging", "production"}:
+        try:
+            valid = get_otp_provider().verify(phone, code)
+        except MSG91Unavailable as exc:
+            raise ProviderUnavailable() from exc
+    else:
+        valid = check_password(code, challenge.code_hash)
+    if not valid:
+        challenge.save(update_fields=["attempts", "updated_at"])
+        return False
+    challenge.consumed_at = timezone.now()
+    challenge.save(update_fields=["attempts", "consumed_at", "updated_at"])
+    return True
+
+
+def require_partner_app_access(phone):
+    """The partner app sends codes only to technicians whose KYC is approved and app login is switched on."""
+    from rest_framework.exceptions import PermissionDenied
+
+    from domains.technicians.models import TechnicianProfile
+
+    profile = TechnicianProfile.objects.select_related("joining_fee").filter(user__phone_e164=phone).first()
+    if not profile:
+        raise PermissionDenied("This number is not registered as a NammaPros partner. Tap 'Request to join' first.")
+    fee = getattr(profile, "joining_fee", None)
+    if fee is not None and not fee.settled:
+        return  # applicants may sign in only to pay the joining fee; jobs stay locked until approval
+    if profile.verification_status != "VERIFIED" or not profile.is_active:
+        raise PermissionDenied("Your application is still being reviewed. We will message you once it is approved.")
+    if not profile.app_login_enabled:
+        raise PermissionDenied("Your account is approved but app access is not switched on yet. Please contact NammaPros.")
+
+
 @method_decorator(csrf_protect, name="dispatch")
 class OTPRequestView(APIView):
     permission_classes = [AllowAny]
@@ -64,26 +135,9 @@ class OTPRequestView(APIView):
 
     def post(self, request):
         phone = valid_phone(request.data.get("phone_e164"))
-        now = timezone.now()
-        latest = OTPChallenge.objects.filter(phone_e164=phone).order_by("-created_at").first()
-        if latest and latest.created_at > now - timedelta(seconds=60):
-            raise TooManyRequests("Wait one minute before requesting another code.")
-        if OTPChallenge.objects.filter(phone_e164=phone, created_at__gte=now - timedelta(hours=1)).count() >= 5:
-            raise TooManyRequests()
-        if settings.ENVIRONMENT in {"staging", "production"}:
-            try:
-                get_otp_provider().send(phone)
-            except MSG91Unavailable as exc:
-                raise ProviderUnavailable() from exc
-            code = None
-        else:
-            code = f"{secrets.randbelow(10 ** settings.OTP_CODE_LENGTH):0{settings.OTP_CODE_LENGTH}d}"
-        challenge = OTPChallenge.objects.create(phone_e164=phone, code_hash=make_password(code),
-                                                expires_at=now + timedelta(minutes=5))
-        body = {"challenge_id": str(challenge.id), "expires_at": challenge.expires_at}
-        if code is not None:
-            body["development_code"] = code
-        return Response(body)
+        if request.data.get("app") == "partner":
+            require_partner_app_access(phone)
+        return Response(issue_otp(phone))
 
 
 @method_decorator(csrf_protect, name="dispatch")
@@ -96,29 +150,11 @@ class OTPVerifyView(APIView):
     @transaction.atomic
     def post(self, request):
         phone = valid_phone(request.data.get("phone_e164"))
-        challenge_id = serializers.UUIDField().run_validation(request.data.get("challenge_id"))
-        code = request.data.get("code")
-        if not isinstance(code, str) or not re.fullmatch(rf"\d{{{settings.OTP_CODE_LENGTH}}}", code):
-            raise ValidationError({"code": ["Enter the configured verification code."]})
-        challenge = OTPChallenge.objects.select_for_update().filter(id=challenge_id, phone_e164=phone).first()
-        if not challenge or challenge.consumed_at or challenge.expires_at <= timezone.now():
-            raise ValidationError({"code": ["This code expired. Request a new one."]})
-        if challenge.attempts >= 5:
-            raise TooManyRequests("Too many code attempts. Request a new code.")
-        challenge.attempts += 1
-        if settings.ENVIRONMENT in {"staging", "production"}:
-            try:
-                valid = get_otp_provider().verify(phone, code)
-            except MSG91Unavailable as exc:
-                raise ProviderUnavailable() from exc
-        else:
-            valid = check_password(code, challenge.code_hash)
-        if not valid:
-            challenge.save(update_fields=["attempts", "updated_at"])
+        if request.data.get("app") == "partner":
+            require_partner_app_access(phone)
+        if not consume_otp(phone, request.data.get("challenge_id"), request.data.get("code")):
             return Response({"error": {"code": "INVALID_OTP", "message": "The code is incorrect.",
                                        "fields": {"code": ["The code is incorrect."]}, "request_id": ""}}, status=400)
-        challenge.consumed_at = timezone.now()
-        challenge.save(update_fields=["attempts", "consumed_at", "updated_at"])
         User = get_user_model()
         user, _ = User.objects.get_or_create(phone_e164=phone, defaults={"username": phone})
         login(request._request, user, backend="django.contrib.auth.backends.ModelBackend")
@@ -244,6 +280,17 @@ class RefreshTokenView(APIView):
         BlacklistedRefreshToken.objects.get_or_create(jti=jti, defaults={"user": user, "expires_at": exp_dt})
         tokens = issue_token_pair(user)
         return Response(tokens)
+
+
+class SessionView(APIView):
+    """Always 200: tells the site whether the visitor is signed in (no error noise for guests)."""
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return Response({"authenticated": False})
+        return Response({"authenticated": True, "id": user.pk, "phone_e164": user.phone_e164})
 
 
 class MeView(APIView):

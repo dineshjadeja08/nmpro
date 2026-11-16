@@ -1,6 +1,7 @@
 import json
 
 from django.conf import settings
+from django.db import transaction
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
@@ -101,12 +102,27 @@ class BalanceCollectInput(serializers.Serializer):
     method = serializers.ChoiceField(choices=["CASH", "UPI"], default="CASH")
 
 
+def _require_collector(user, booking_id):
+    """Only the technician assigned to the booking, or operations/finance staff, may record a visit payment."""
+    from rest_framework.exceptions import PermissionDenied
+
+    from domains.administration.rbac import roles_for
+    from domains.technicians.models import JobAssignment
+
+    if JobAssignment.objects.filter(booking_id=booking_id, technician__user=user).exists():
+        return
+    if roles_for(user) & {"SUPER_ADMIN", "OPERATIONS_MANAGER", "DISPATCH_OPERATOR", "FINANCE_ADMIN"}:
+        return
+    raise PermissionDenied("Only the assigned technician or staff can record this payment.")
+
+
 class BalanceCollectView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, booking_id):
         data = BalanceCollectInput(data=request.data)
         data.is_valid(raise_exception=True)
+        _require_collector(request.user, booking_id)
         booking = record_collected_balance(request.user, booking_id, method=data.validated_data["method"])
         return Response({"booking_id": str(booking.id), "status": booking.status,
                          "payment_status": booking.payment_status})
@@ -135,6 +151,17 @@ class RazorpayWebhookView(APIView):
                 raise ValueError("Expected payment entity object")
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             raise Conflict("Malformed webhook payload.") from exc
+        if event_type == "payment.captured" and entity.get("order_id"):
+            from domains.technicians.models import TechnicianJoiningFee
+            from domains.technicians.partner import mark_fee_paid_online
+
+            with transaction.atomic():
+                fee = TechnicianJoiningFee.objects.select_for_update().filter(
+                    provider_order_id=entity["order_id"]).first()
+                if fee is not None:
+                    if int(entity.get("amount", -1)) == fee.amount_paise:
+                        mark_fee_paid_online(fee, str(entity.get("id", ""))[:64])
+                    return Response({"accepted": True, "processing_status": "PROCESSED"})
         event = record_webhook_event(request.headers.get("X-Razorpay-Event-Id", ""), event_type,
                                      raw, entity.get("id", ""), entity.get("order_id", ""))
         try:

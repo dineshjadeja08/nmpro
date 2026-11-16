@@ -70,16 +70,22 @@ class BookingStartOTPView(APIView):
         })
 
 
-def _serialize_cart(cart):
+MAX_CART_ITEMS = 20
+MAX_ITEM_QUANTITY = 20
+
+
+def _serialize_cart(cart, skipped=None):
     items = list(cart.items.select_related("service", "package").order_by("created_at"))
-    return {
+    data = {
         "id": str(cart.id),
+        "item_count": sum(item.quantity for item in items),
         "items": [
             {
                 "id": str(item.id),
                 "service_id": str(item.service_id),
                 "service_slug": item.service.slug,
                 "service_name": item.service.name,
+                "service_image": item.service.list_image_display or item.service.cover_image_display or "",
                 "package_id": str(item.package_id) if item.package_id else None,
                 "package_name": item.package.name if item.package else None,
                 "quantity": item.quantity,
@@ -87,6 +93,52 @@ def _serialize_cart(cart):
             for item in items
         ],
     }
+    if skipped is not None:
+        data["skipped"] = skipped
+    return data
+
+
+class CartMergeItemInput(serializers.Serializer):
+    service_id = serializers.UUIDField()
+    package_id = serializers.UUIDField(required=False, allow_null=True)
+    quantity = serializers.IntegerField(min_value=1, required=False, default=1)
+
+
+class CartMergeView(APIView):
+    """Merge a guest cart kept in the browser into the signed-in user's cart (called after OTP login)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        items = serializers.ListField(child=CartMergeItemInput(), max_length=50).run_validation(
+            request.data.get("items", []) if isinstance(request.data, dict) else []
+        )
+        skipped = []
+        with transaction.atomic():
+            cart, _ = Cart.objects.select_for_update().get_or_create(user=request.user)
+            existing = {item.package_id: item for item in cart.items.all()}
+            for entry in items:
+                service = Service.objects.filter(
+                    id=entry["service_id"], is_active=True, category__is_active=True
+                ).first()
+                if not service:
+                    skipped.append({"service_id": str(entry["service_id"]), "reason": "Service is not available."})
+                    continue
+                packages = service.packages.filter(is_active=True)
+                package = packages.filter(id=entry["package_id"]).first() if entry.get("package_id") else packages.first()
+                if not package:
+                    skipped.append({"service_id": str(service.id), "reason": "Package is not available."})
+                    continue
+                quantity = min(entry.get("quantity") or 1, MAX_ITEM_QUANTITY)
+                if package.id in existing:
+                    item = existing[package.id]
+                    item.quantity = quantity
+                    item.save(update_fields=["quantity", "updated_at"])
+                    continue
+                if len(existing) >= MAX_CART_ITEMS:
+                    skipped.append({"service_id": str(service.id), "reason": "Cart is full."})
+                    continue
+                existing[package.id] = CartItem.objects.create(cart=cart, service=service, package=package, quantity=quantity)
+        return Response(_serialize_cart(cart, skipped=skipped))
 
 
 class CartView(APIView):

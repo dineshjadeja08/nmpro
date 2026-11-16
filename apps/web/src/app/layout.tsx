@@ -6,6 +6,7 @@ import { BookingCartProvider } from "@/components/booking-cart-provider";
 import { Footer } from "@/components/footer";
 import { Header } from "@/components/header";
 import { LocationProvider } from "@/components/location-provider";
+import { ZonePricingProvider } from "@/components/zone-pricing-provider";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import "./globals.css";
 
@@ -36,13 +37,23 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={plusJakartaSans.variable}>
       <body className={`${plusJakartaSans.className} pb-16 md:pb-0`}>
         <LocationProvider>
+          <ZonePricingProvider>
           <BookingCartProvider>
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[100] focus:rounded-md focus:bg-[#1C1917] focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-white"
+            >
+              Skip to main content
+            </a>
             <Header />
-            {children}
+            <div id="main-content" tabIndex={-1} className="outline-none">
+              {children}
+            </div>
             <Footer />
             <BookingCartDrawer />
             <MobileBottomNav />
           </BookingCartProvider>
+          </ZonePricingProvider>
         </LocationProvider>
       </body>
     </html>

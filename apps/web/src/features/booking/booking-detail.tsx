@@ -4,6 +4,8 @@ import { CalendarPlus, Camera, CheckCircle2, Download, MessageCircle, Star } fro
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LiveBookingTracker } from "@/components/live-booking-tracker";
+import { ReportProblem } from "@/components/report-problem";
+import { TechnicianLiveLocation } from "@/components/technician-live-location";
 import { ServiceImage } from "@/components/service-image";
 import { bookingApi, type Booking, type Slot } from "@/lib/booking-api";
 import { resolveUploadedMediaUrl } from "@/lib/service-images";
@@ -353,6 +355,10 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
               technician={booking.technician ?? null}
               startOtpCode={booking.start_otp_code}
             />
+            <TechnicianLiveLocation bookingId={booking.id} status={booking.status} />
+            {!["AWAITING_PAYMENT", "CANCELLED", "EXPIRED"].includes(booking.status) && (
+              <ReportProblem bookingId={booking.id} hasProfessional={Boolean(booking.technician)} />
+            )}
 
             {error && <div className="booking-warning" role="alert">{error}</div>}
             {paymentMessage && <div className="booking-warning" role="status">{paymentMessage}</div>}
@@ -558,9 +564,9 @@ export function BookingDetail({ id, confirmed }: { id: string; confirmed: boolea
 
             <div className="booking-actions">
               <Link className="button button-outline" href="/bookings">My Bookings</Link>
-              {booking.invoice_available && (
-                <a className="button button-outline" href={bookingApi.invoiceUrl(id)}>
-                  <Download size={15} strokeWidth={1.5} /> Download invoice
+              {booking.receipt_available && (
+                <a className="button button-outline" href={bookingApi.receiptUrl(id)}>
+                  <Download size={15} strokeWidth={1.5} /> Download receipt
                 </a>
               )}
               <Link className="button button-outline" href="/services">Book another service</Link>

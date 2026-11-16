@@ -63,7 +63,7 @@ INSTALLED_APPS = [
     "django.contrib.messages", "django.contrib.staticfiles", "corsheaders", "rest_framework", "drf_spectacular", "common",
     "domains.users", "domains.catalog", "domains.locations", "domains.bookings",
     "domains.technicians", "domains.payments", "domains.notifications", "domains.audit", "domains.operations",
-    "domains.administration",
+    "domains.administration", "domains.promotions.apps.PromotionsConfig",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware", "common.middleware.RequestIdMiddleware",
@@ -125,12 +125,36 @@ REST_FRAMEWORK = {
     "EXCEPTION_HANDLER": "common.errors.exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_THROTTLE_CLASSES": ["rest_framework.throttling.AnonRateThrottle", "rest_framework.throttling.UserRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"anon": "120/min", "user": "120/min", "otp_request": "5/min", "otp_verify": "20/min"},
+    "DEFAULT_THROTTLE_RATES": {"anon": "120/min", "user": "120/min", "otp_request": "5/min", "otp_verify": "20/min", "join_request": "5/hour"},
 }
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", SECRET_KEY)
 JWT_ACCESS_SECONDS = int(os.getenv("JWT_ACCESS_SECONDS", "3600"))
 JWT_REFRESH_SECONDS = int(os.getenv("JWT_REFRESH_SECONDS", str(60 * 60 * 24 * 14)))
 PUSH_PROVIDER = os.getenv("PUSH_PROVIDER", "")
+# Web push (technician job-offer alerts). Generate a key pair with `python manage.py generate_vapid_keys`.
+WEB_PUSH_VAPID_PUBLIC_KEY = os.getenv("WEB_PUSH_VAPID_PUBLIC_KEY", "")
+WEB_PUSH_VAPID_PRIVATE_KEY = os.getenv("WEB_PUSH_VAPID_PRIVATE_KEY", "")
+WEB_PUSH_CONTACT = os.getenv("WEB_PUSH_CONTACT", "")
+# Payee shown in the technician's UPI QR when collecting payment at the visit.
+UPI_PAYEE_VPA = os.getenv("UPI_PAYEE_VPA", "")
+UPI_PAYEE_NAME = os.getenv("UPI_PAYEE_NAME", "NammaPros")
+# One-time fee a technician pays to join and receive leads (paise). Default ₹10,000.
+TECHNICIAN_JOINING_FEE_PAISE = int(os.getenv("TECHNICIAN_JOINING_FEE_PAISE", "1000000"))
+# The joining fee buys this many days of membership (leads). Renew by paying again.
+TECHNICIAN_MEMBERSHIP_DAYS = int(os.getenv("TECHNICIAN_MEMBERSHIP_DAYS", "365"))
+# Optional cap on leads per membership year (0 = no cap). Leads are always shared fairly: fewest first.
+TECHNICIAN_LEADS_PER_YEAR = int(os.getenv("TECHNICIAN_LEADS_PER_YEAR", "0"))
+# Personal data retention (days). KYC files of rejected/withdrawn applicants, and of technicians who left.
+KYC_RETENTION_REJECTED_DAYS = int(os.getenv("KYC_RETENTION_REJECTED_DAYS", "90"))
+KYC_RETENTION_OFFBOARDED_DAYS = int(os.getenv("KYC_RETENTION_OFFBOARDED_DAYS", "365"))
+# Deletion requests are completed within this many days (staff review window).
+DATA_DELETION_DAYS = int(os.getenv("DATA_DELETION_DAYS", "30"))
+# General offer/coupon codes. Off: discounts would cut what technicians collect. Referral rewards still work.
+COUPONS_ENABLED = os.getenv("COUPONS_ENABLED", "false").lower() == "true"
+# Referral programme amounts in paise (0 disables that side of the programme).
+REFERRAL_REFEREE_DISCOUNT_PAISE = int(os.getenv("REFERRAL_REFEREE_DISCOUNT_PAISE", "10000"))
+REFERRAL_REWARD_PAISE = int(os.getenv("REFERRAL_REWARD_PAISE", "10000"))
+REFERRAL_REWARD_VALID_DAYS = int(os.getenv("REFERRAL_REWARD_VALID_DAYS", "90"))
 BOOKING_HOLD_MINUTES = int(os.getenv("BOOKING_HOLD_MINUTES", "5"))
 if not 1 <= BOOKING_HOLD_MINUTES <= 30:
     raise ImproperlyConfigured("BOOKING_HOLD_MINUTES must be between 1 and 30")

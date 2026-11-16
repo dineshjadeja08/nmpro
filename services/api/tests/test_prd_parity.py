@@ -258,7 +258,8 @@ def test_service_area_unconfigured_closure_cart_start_otp_review_work_order_and_
     tech_owner = get_user_model().objects.create_user(username="tech-owner", phone_e164="+919876500002")
     tech_member = get_user_model().objects.create_user(username="tech-member", phone_e164="+919876500003")
     profile = TechnicianProfile.objects.create(user=tech_owner, display_name="Partner Co", city="Chennai",
-                                               verification_status="VERIFIED", is_active=True, is_online=True)
+                                               verification_status="VERIFIED", is_active=True, is_online=True,
+                                               app_login_enabled=True)
     cu = admin_client.post(f"/api/v1/admin/technicians/{profile.id}/company-users/",
                            {"user_id": tech_member.id, "role": "TECHNICIAN"}, format="json")
     assert cu.status_code == 201

@@ -56,6 +56,8 @@ def profile_for(user, verified=False):
         raise PermissionDenied("Register as a technician first.")
     if verified and (profile.verification_status != "VERIFIED" or not profile.is_active):
         raise PermissionDenied("Only verified active technicians can use jobs.")
+    if verified and not profile.app_login_enabled:
+        raise PermissionDenied("Partner app access is not enabled for this account yet.")
     return profile
 
 
@@ -124,7 +126,11 @@ def review_application(actor, profile_id, target, note=""):
     profile.is_active = target == "VERIFIED"
     profile.is_online = False
     profile.verified_at = timezone.now() if target == "VERIFIED" else profile.verified_at
-    profile.save(update_fields=["verification_status", "is_active", "is_online", "verified_at", "updated_at"])
+    if target != "VERIFIED" and profile.app_login_enabled:
+        profile.app_login_enabled = False
+        profile.app_login_changed_at = timezone.now()
+    profile.save(update_fields=["verification_status", "is_active", "is_online", "verified_at",
+                                "app_login_enabled", "app_login_changed_at", "updated_at"])
     TechnicianVerification.objects.create(technician=profile, from_status=old, to_status=target,
                                           actor=actor, note=note)
     audit(actor, f"TECHNICIAN_{target}", "TechnicianProfile", profile.id)
@@ -264,7 +270,11 @@ def verify_start_otp(user, assignment_id, otp_code):
 def transition(user, assignment_id, target):
     profile = profile_for(user, verified=True)
     assignment = JobAssignment.objects.select_for_update().filter(id=assignment_id, technician=profile).first()
-    if not assignment or TRANSITIONS.get(assignment.status) != target:
+    fixed_price_start = (assignment is not None and assignment.status == "INSPECTING" and target == "IN_PROGRESS"
+                         and assignment.booking.package is not None
+                         and assignment.booking.package.pricing_model == "FIXED_PRICE"
+                         and not assignment.quotations.filter(status="SUBMITTED").exists())
+    if not assignment or (TRANSITIONS.get(assignment.status) != target and not fixed_price_start):
         raise JobConflict()
     if assignment.booking.status not in ("CONFIRMED", "CONFIRMED_UNPAID", "TECHNICIAN_ASSIGNED", "TECHNICIAN_EN_ROUTE", "TECHNICIAN_ARRIVED"):
         raise JobConflict("Booking is no longer active.")
@@ -417,7 +427,7 @@ def accrue_earning(assignment):
         else:
             snapshot = assignment.booking.price_snapshot
             base = (captured_paise if commission.percentage_base == "CAPTURED_GROSS" else
-                    sum(line["amount_paise"] for line in snapshot.lines if line["code"] != "TAX"))
+                    sum(line["amount_paise"] for line in snapshot.lines if line["code"] not in ("TAX", "DISCOUNT")))
             amount = base * commission.basis_points // 10_000
         calculation = {"rule_id": str(commission.id), "kind": commission.kind,
                        "base_paise": base, "basis_points": commission.basis_points,

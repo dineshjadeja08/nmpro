@@ -24,6 +24,7 @@ from domains.technicians.models import (
     JobAssignment,
     TechnicianDocument,
     TechnicianEarning,
+    TechnicianJoiningFee,
     TechnicianProfile,
     TechnicianServiceZone,
     TechnicianSkill,
@@ -142,7 +143,8 @@ def package_data(p):
     return {"id": str(p.id), "service_id": str(p.service_id), "name": p.name,
             "description": p.description, "requirements": p.requirements, "pricing_model": p.pricing_model,
             "duration_minutes": p.duration_minutes, "inclusions": p.inclusions,
-            "exclusions": p.exclusions, "skill_code": p.skill_code, "is_active": p.is_active}
+            "exclusions": p.exclusions, "skill_code": p.skill_code, "is_active": p.is_active,
+            "original_price_paise": p.original_price_paise, "is_most_booked": p.is_most_booked}
 
 
 def price_data(p):
@@ -300,6 +302,20 @@ class AdminCustomerView(APIView):
         return Response(data)
 
 
+def _joining_fee_admin(p):
+    fee = TechnicianJoiningFee.objects.filter(technician=p).first()
+    if not fee:
+        return None
+    from django.conf import settings as dj_settings
+
+    from domains.technicians.partner import leads_this_term
+
+    return {"amount_paise": fee.amount_paise, "status": fee.status, "method": fee.method, "reference": fee.reference,
+            "paid_at": fee.paid_at, "settled": fee.settled, "provider_payment_id": fee.provider_payment_id,
+            "valid_until": fee.valid_until, "membership_active": fee.membership_active,
+            "leads_this_year": leads_this_term(p, fee), "leads_per_year": dj_settings.TECHNICIAN_LEADS_PER_YEAR or None}
+
+
 def _technician_detail_data(p):
     from django.db.models import Avg
     profile_photo_doc = p.documents.filter(kind="PROFILE_PHOTO").order_by("-created_at").first()
@@ -319,6 +335,9 @@ def _technician_detail_data(p):
         "name": p.display_name,
         "display_name": p.display_name,
         "phone": p.user.phone_e164,
+        "app_login_enabled": p.app_login_enabled,
+        "app_login_changed_at": p.app_login_changed_at,
+        "joining_fee": _joining_fee_admin(p),
         "virtual_mobile_number": p.virtual_mobile_number,
         "alternate_phone": p.alternate_phone,
         "email": p.email,
@@ -394,6 +413,7 @@ class AdminTechniciansView(APIView):
             "status": p.verification_status,
             "is_active": p.is_active,
             "online": p.is_online,
+            "app_login_enabled": p.app_login_enabled,
             "services": [s.name for s in p.supported_services.all()] or [s.code for s in p.skills.all() if s.is_verified],
             "zones": [z.zone.name for z in p.zones.all()],
         })
@@ -422,6 +442,38 @@ class AdminTechniciansView(APIView):
         )
         audit(request.user, "TECHNICIAN_CREATED", "TechnicianProfile", profile.id)
         return Response(_technician_detail_data(profile), status=201)
+
+
+class JoiningFeeRecordInput(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["PAID", "WAIVED"])
+    method = serializers.ChoiceField(choices=["CASH", "BANK_TRANSFER", "UPI", "WAIVED"])
+    reference = serializers.CharField(max_length=80, allow_blank=True, required=False, default="")
+
+
+def _record_joining_fee(request, profile):
+    """Staff record a joining fee paid outside the app (cash, bank transfer, UPI) or waive it."""
+    from django.conf import settings as dj_settings
+
+    data = JoiningFeeRecordInput(data=request.data["joining_fee"])
+    data.is_valid(raise_exception=True)
+    values = data.validated_data
+    if values["status"] == "WAIVED" and not can(request.user, "APPROVE_REFUNDS") and "SUPER_ADMIN" not in roles_for(request.user):
+        raise serializers.ValidationError({"joining_fee": "Only a super admin or finance admin can waive the fee."})
+    fee, _ = TechnicianJoiningFee.objects.select_for_update().get_or_create(
+        technician=profile, defaults={"amount_paise": dj_settings.TECHNICIAN_JOINING_FEE_PAISE})
+    if fee.membership_active:
+        raise serializers.ValidationError({"joining_fee": "The membership is already active."})
+    from domains.technicians.partner import start_membership
+
+    fee.status = values["status"]
+    fee.method = "WAIVED" if values["status"] == "WAIVED" else values["method"]
+    fee.reference = values["reference"]
+    fee.amount_paise = dj_settings.TECHNICIAN_JOINING_FEE_PAISE
+    start_membership(fee)
+    fee.recorded_by = request.user
+    fee.save()
+    audit(request.user, f"TECHNICIAN_JOINING_FEE_{fee.status}", "TechnicianJoiningFee", fee.id,
+          {"method": fee.method, "reference": fee.reference, "amount_paise": fee.amount_paise})
 
 
 class AdminTechnicianView(APIView):
@@ -463,7 +515,31 @@ class AdminTechnicianView(APIView):
             p.verification_status = serializers.ChoiceField(
                 choices=["REGISTERED", "PENDING_DOCUMENTS", "UNDER_REVIEW", "VERIFIED", "REJECTED", "SUSPENDED"]
             ).run_validation(request.data["background_verification_status"])
+        if "joining_fee" in request.data:
+            _record_joining_fee(request, p)
+        access_enabled_now = False
+        if "app_login_enabled" in request.data:
+            enable = serializers.BooleanField().run_validation(request.data["app_login_enabled"])
+            if enable and (p.verification_status != "VERIFIED" or not p.is_active):
+                raise serializers.ValidationError(
+                    {"app_login_enabled": "Approve the KYC and activate the technician before allowing app login."})
+            fee = TechnicianJoiningFee.objects.filter(technician=p).first()
+            if enable and not (fee and fee.membership_active):
+                raise serializers.ValidationError(
+                    {"app_login_enabled": "Record the joining fee as paid (or waived) before allowing app login."})
+            if enable != p.app_login_enabled:
+                p.app_login_enabled = enable
+                p.app_login_changed_at = timezone.now()
+                access_enabled_now = enable
+                audit(request.user, "TECHNICIAN_APP_LOGIN_ENABLED" if enable else "TECHNICIAN_APP_LOGIN_DISABLED",
+                      "TechnicianProfile", p.id)
+        if p.verification_status != "VERIFIED" or not p.is_active:
+            p.app_login_enabled = False  # suspending or un-approving always removes app access
+            access_enabled_now = False
         p.save()
+        if access_enabled_now:
+            from domains.technicians.messaging import notify_technician
+            notify_technician(p, "TECHNICIAN_APP_ACCESS_ENABLED")
 
         if "supported_service_ids" in request.data:
             svc_ids = [str(x) for x in (request.data.get("supported_service_ids") or [])]
@@ -589,8 +665,32 @@ class FAQItemInput(serializers.Serializer):
 
 
 class ServiceBrandInput(serializers.Serializer):
-    name = serializers.CharField(max_length=80)
+    name = serializers.CharField(max_length=60)
     logo_url = serializers.CharField(max_length=500, allow_blank=True, required=False, default="")
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Brand name is required.")
+        return value
+
+    def validate_logo_url(self, value):
+        value = (value or "").strip()
+        if value and not value.startswith("https://"):
+            raise serializers.ValidationError("Brand logo must be an https:// URL.")
+        return value
+
+
+def validate_brand_list(brands):
+    if len(brands) > 30:
+        raise serializers.ValidationError("Add at most 30 brands.")
+    seen = set()
+    for brand in brands:
+        key = brand["name"].casefold()
+        if key in seen:
+            raise serializers.ValidationError(f"Brand '{brand['name']}' is listed twice.")
+        seen.add(key)
+    return [{"name": b["name"], "logo_url": b.get("logo_url", "")} for b in brands]
 
 
 class ServiceInput(serializers.Serializer):
@@ -626,6 +726,9 @@ class ServiceInput(serializers.Serializer):
     sort_order = serializers.IntegerField(min_value=0, max_value=65535, required=False)
     is_active = serializers.BooleanField(required=False)
 
+    def validate_brands(self, value):
+        return validate_brand_list(value)
+
 
 class PackageInput(serializers.Serializer):
     service_id = serializers.UUIDField(required=False)
@@ -638,6 +741,8 @@ class PackageInput(serializers.Serializer):
     exclusions = serializers.ListField(child=serializers.CharField(max_length=200), required=False)
     skill_code = serializers.CharField(max_length=60, required=False)
     is_active = serializers.BooleanField(required=False)
+    original_price_paise = serializers.IntegerField(min_value=0, required=False, allow_null=True)
+    is_most_booked = serializers.BooleanField(required=False)
 
 
 class CatalogCollectionView(APIView):

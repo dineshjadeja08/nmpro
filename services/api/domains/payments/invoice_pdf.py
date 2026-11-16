@@ -49,9 +49,10 @@ def render_invoice_pdf(invoice):
     pdf.setFont("Helvetica", 10)
     y = height - 399
     for line in booking.price_snapshot.lines[:15]:
-        if line.get("amount_paise", 0) <= 0:
+        if line.get("amount_paise", 0) == 0:
             continue
-        pdf.drawString(48, y, str(line.get("code", "Service"))[:60].replace("_", " "))
+        label = line.get("name") if line.get("code") in ("ITEM", "DISCOUNT") and line.get("name") else line.get("code", "Service")
+        pdf.drawString(48, y, str(label)[:60].replace("_", " "))
         pdf.drawRightString(width - 48, y, f"{line['amount_paise'] / 100:,.2f}")
         y -= 22
     pdf.line(48, y - 5, width - 48, y - 5)

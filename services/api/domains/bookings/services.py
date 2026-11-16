@@ -220,7 +220,7 @@ def _item_advance_paise(rule: PricingRule, unit_total: int) -> int:
 
 
 @transaction.atomic
-def create_quote(user, hold_id, cart_items=None):
+def create_quote(user, hold_id, cart_items=None, coupon_code=""):
     hold_ref = SlotHold.objects.filter(id=hold_id, user=user).values("slot_id").first()
     if not hold_ref:
         raise ValidationError("Reservation not found.")
@@ -275,6 +275,11 @@ def create_quote(user, hold_id, cart_items=None):
             total += unit_total * qty
             advance_paise += unit_adv * qty
 
+    if coupon_code:
+        from domains.promotions.services import apply_discount, evaluate_code
+
+        offer = evaluate_code(user, coupon_code, total, advance=advance_paise)
+        lines, total, advance_paise = apply_discount(lines, total, advance_paise, offer)
     remaining_balance_paise = total - advance_paise
     return CheckoutQuote.objects.create(hold=hold, user=user, pricing_rule=rule,
                                         pricing_version=rule.version, lines=lines, total_paise=total,
@@ -283,11 +288,20 @@ def create_quote(user, hold_id, cart_items=None):
                                         expires_at=min(hold.expires_at, timezone.now() + timedelta(minutes=5)))
 
 
+def _quote_discount(quote):
+    return -sum(int(line.get("amount_paise", 0)) for line in (quote.lines or [])
+                if isinstance(line, dict) and line.get("code") == "DISCOUNT")
+
+
 def serialize_quote(quote):
     return {"id": str(quote.id), "hold_id": str(quote.hold_id), "expires_at": quote.expires_at,
             "lines": quote.lines, "total_paise": quote.total_paise,
             "advance_paise": getattr(quote, "advance_paise", 0),
             "remaining_balance_paise": getattr(quote, "remaining_balance_paise", 0),
+            "discount_paise": -sum(int(line.get("amount_paise", 0)) for line in (quote.lines or [])
+                                   if isinstance(line, dict) and line.get("code") == "DISCOUNT"),
+            "coupon_code": next((line.get("coupon_code") for line in (quote.lines or [])
+                                 if isinstance(line, dict) and line.get("code") == "DISCOUNT"), None),
             "currency": "INR",
             "pricing_policy_id": str(quote.pricing_rule_id), "pricing_version": quote.pricing_version,
             "payment_policy": quote.pricing_rule.payment_policy,
@@ -336,6 +350,7 @@ def serialize_booking(booking):
     return {"id": str(booking.id), "reference": booking.reference, "status": booking.status,
             "payment_status": booking.payment_status, "payment_expires_at": booking.payment_expires_at,
             "invoice_available": bool(invoice and invoice.status == "ISSUED" and invoice.document),
+            "receipt_available": booking.payments.filter(status="CAPTURED").exists(),
             "payment_attempt_unresolved": bool(payment_order and payment_order.checkout_started_at
                                                and booking.status == "AWAITING_PAYMENT"
                                                and booking.payment_status != "FAILED"),
@@ -411,6 +426,8 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
     if not rule or rule.version != quote.pricing_version:
         raise Conflict("The price changed. Request and accept a new quote.")
 
+    from domains.promotions.services import record_redemption, revalidate_for_confirm
+
     item_lines = [line for line in (quote.lines or []) if isinstance(line, dict) and line.get("code") == "ITEM"]
     if item_lines:
         current_total = 0
@@ -429,6 +446,9 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
                 requires_online_payment = True
             elif item_rule.payment_policy != "PAY_AT_VISIT":
                 raise Conflict("Payment policy is not supported.")
+        offer, discount = revalidate_for_confirm(user, quote.lines, current_total,
+                                                 quote.advance_paise + _quote_discount(quote))
+        current_total -= discount
         if current_total != quote.total_paise or accepted_total != quote.total_paise:
             raise Conflict("The price changed. Request and accept a new quote.")
         if requires_online_payment and not settings.RAZORPAY_ENABLED:
@@ -440,6 +460,9 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
         )
     else:
         _, current_total = calculate_price(rule)
+        offer, discount = revalidate_for_confirm(user, quote.lines, current_total,
+                                                 quote.advance_paise + _quote_discount(quote))
+        current_total -= discount
         if current_total != quote.total_paise or accepted_total != quote.total_paise:
             raise Conflict("The price changed. Request and accept a new quote.")
         if rule.payment_policy in ("PREPAID", "ADVANCE") and not settings.RAZORPAY_ENABLED:
@@ -487,6 +510,7 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
                                          cancellation_cutoff_minutes=rule.cancellation_cutoff_minutes,
                                          reschedule_cutoff_minutes=rule.reschedule_cutoff_minutes)
     BookingStatusEvent.objects.create(booking=booking, from_status="DRAFT", to_status=booking.status, actor=user)
+    record_redemption(user, booking, offer)
     BookingIdempotencyRecord.objects.create(user=user, key=key, request_hash=body_hash, booking=booking)
     OutboxEvent.objects.create(event_type="BOOKING_PAYMENT_PENDING" if requires_online_payment else "BOOKING_CONFIRMED", aggregate_id=booking.id,
                                payload={"booking_id": str(booking.id)})

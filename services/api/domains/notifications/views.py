@@ -52,3 +52,51 @@ class DeviceRegisterView(APIView):
         if token:
             DeviceToken.objects.filter(user=request.user, token=token).update(is_active=False)
         return Response(status=204)
+
+
+class WebPushConfigView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.conf import settings
+
+        from .webpush import enabled
+        return Response({"enabled": enabled(), "public_key": settings.WEB_PUSH_VAPID_PUBLIC_KEY if enabled() else ""})
+
+
+class WebPushSubscribeInput(serializers.Serializer):
+    endpoint = serializers.URLField(max_length=1000)
+    keys = serializers.DictField(child=serializers.CharField(max_length=200))
+
+    def validate_endpoint(self, value):
+        if not value.startswith("https://"):
+            raise serializers.ValidationError("Push endpoint must use https.")
+        return value
+
+    def validate_keys(self, value):
+        if not value.get("p256dh") or not value.get("auth"):
+            raise serializers.ValidationError("Subscription keys are missing.")
+        return value
+
+
+class WebPushSubscribeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .models import WebPushSubscription
+
+        data = WebPushSubscribeInput(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        WebPushSubscription.objects.update_or_create(
+            endpoint=values["endpoint"],
+            defaults={"user": request.user, "p256dh": values["keys"]["p256dh"], "auth": values["keys"]["auth"],
+                      "user_agent": request.headers.get("User-Agent", "")[:300], "is_active": True, "last_error": ""})
+        return Response({"subscribed": True}, status=201)
+
+    def delete(self, request):
+        from .models import WebPushSubscription
+
+        endpoint = str(request.data.get("endpoint", ""))[:1000] if isinstance(request.data, dict) else ""
+        WebPushSubscription.objects.filter(user=request.user, endpoint=endpoint).update(is_active=False)
+        return Response(status=204)

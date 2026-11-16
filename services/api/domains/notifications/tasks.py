@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from domains.bookings.models import Booking
 
+from .messages import message_values
 from .models import Notification, NotificationPreference, OutboxEvent
 from .providers.msg91_sms import MSG91SMSProvider
 from .providers.msg91_whatsapp import DeliveryUnavailable, MSG91WhatsAppProvider
@@ -37,6 +38,11 @@ TEMPLATE_VARIABLES = {
     "QUOTATION_APPROVED": ("booking_reference",),
     "QUOTATION_REJECTED": ("booking_reference",),
     "JOB_COMPLETED": ("booking_reference",),
+    "TECHNICIAN_APP_ACCESS_ENABLED": ("booking_reference",),
+    "TECHNICIAN_JOINING_FEE_PAID": ("booking_reference",),
+    "TECHNICIAN_JOB_ASSIGNED": ("booking_reference",),
+    "REVIEW_REQUEST": ("booking_reference",),
+    "COMPLAINT_RECEIVED": ("booking_reference",),
 }
 
 
@@ -139,14 +145,14 @@ def _dispatch(channel, configured, template_map, preference_field, send):
 def dispatch_whatsapp_notifications():
     return _dispatch("WHATSAPP", settings.WHATSAPP_ENABLED and settings.WHATSAPP_PROVIDER == "MSG91", settings.WHATSAPP_TEMPLATES,
                      "whatsapp_opt_in", lambda n, t: get_whatsapp_provider().send_template(
-                         n.recipient.phone_e164, t, n.payload["booking_reference"]))
+                         n.recipient.phone_e164, t, message_values(n)))
 
 
 @shared_task
 def dispatch_sms_notifications():
     return _dispatch("SMS", settings.SMS_PROVIDER == "MSG91", settings.SMS_TEMPLATES,
                      "sms_opt_in", lambda n, t: get_sms_provider().send_template(
-                         n.recipient.phone_e164, t, n.payload["booking_reference"]))
+                         n.recipient.phone_e164, t, message_values(n)))
 
 
 @shared_task

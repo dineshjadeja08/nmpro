@@ -81,7 +81,17 @@ export interface ServicePackage {
   starting_price_paise?: number | null;
   original_price_paise?: number | null;
   is_most_booked?: boolean;
+  /** Selling price for the requested zone; without a zone, the lowest price in any zone. */
+  price_paise?: number | null;
+  /** Crossed-out original price; null unless it is above price_paise. */
+  mrp_paise?: number | null;
+  discount_percent?: number | null;
+  /** True when no zone was given and prices differ between zones ("from ₹X"). */
+  price_is_from?: boolean;
+  /** null when no zone was given. */
+  is_available_in_zone?: boolean | null;
 }
+export type RatingBreakdown = Record<"5" | "4" | "3" | "2" | "1", number>;
 export interface Service {
   id: string;
   slug: string;
@@ -97,7 +107,15 @@ export interface Service {
   price_note?: string;
   important_notes?: string;
   rating_avg?: number | null;
+  average_rating?: number | null;
   review_count?: number;
+  starting_mrp_paise?: number | null;
+  starting_discount_percent?: number | null;
+  zone_id?: string | null;
+  /** Quick view only (GET /services/<slug>/). */
+  rating_breakdown?: RatingBreakdown;
+  /** Quick view only: latest 5 visible reviews. */
+  recent_reviews?: PublicReview[];
   is_active: boolean;
   is_popular?: boolean;
   is_featured?: boolean;
@@ -134,6 +152,61 @@ export interface CatalogResponse {
   banners?: HomepageBannerItem[];
   trust_stats?: TrustStats;
   demo: boolean;
+}
+export interface ServiceReviewPage {
+  average_rating: number | null;
+  review_count: number;
+  rating_breakdown: RatingBreakdown;
+  count: number;
+  page: number;
+  page_size: number;
+  next: string | null;
+  previous: string | null;
+  results: PublicReview[];
+}
+export interface CartMergeItem { service_id: string; package_id?: string | null; quantity?: number; }
+export interface BlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  cover_image_url: string;
+  author_name: string;
+  meta_title: string;
+  meta_description: string;
+  is_published: boolean;
+  published_at: string | null;
+}
+export interface FaqItem { id: string; question: string; answer: string; service_id: string | null; category_id: string | null; }
+export interface SeoLandingPage {
+  id: string;
+  page_slug: string;
+  title: string;
+  service_id: string | null;
+  city_id: string | null;
+  area_slug: string;
+  meta_title: string;
+  meta_description: string;
+  hero_heading: string;
+  hero_summary: string;
+  content_html: string;
+  featured_services: Service[];
+  status: string;
+}
+export interface LandingPage {
+  kind: "seo_page" | "generated" | "redirect";
+  slug: string;
+  title?: string;
+  description?: string;
+  heading?: string;
+  summary?: string;
+  content?: string;
+  city?: { name: string; slug: string } | null;
+  category?: ServiceCategory | null;
+  services?: Service[];
+  faqs?: { id: string; question: string; answer: string }[];
+  areas?: { name: string; postal_code: string }[];
 }
 export interface ApiErrorBody { error: { code: string; message: string; fields: Record<string, string[]>; request_id: string; }; }
 export interface ServiceabilityRequest { service_id: string; address_id: string; }

@@ -9,14 +9,16 @@ import { ServiceImage } from "@/components/service-image";
 import { serviceListImage } from "@/lib/service-images";
 import { formatInr, formatStartingPrice } from "@/lib/services";
 import { ServiceDetailModal } from "./service-detail-modal";
+import { isUnavailableHere, useZoneService } from "./zone-pricing-provider";
 
 export function ServiceCard({
-  service,
+  service: baseService,
   onQuickView,
 }: {
   service: Service;
   onQuickView?: (service: Service) => void;
 }) {
+  const service = useZoneService(baseService);
   const [showModal, setShowModal] = useState(false);
   const { items, addToCart, updateItemQuantity } = useBookingCart();
   const imgSrc = serviceListImage(service);
@@ -26,6 +28,11 @@ export function ServiceCard({
   const unitPaise = getPackageUnitPaise(service, defaultPkg);
   const originalPaise = defaultPkg?.original_price_paise ?? null;
   const showStrike = Boolean(originalPaise && unitPaise != null && originalPaise > unitPaise);
+  const discount = showStrike && originalPaise && unitPaise != null
+    ? Math.round(((originalPaise - unitPaise) * 100) / originalPaise)
+    : null;
+  const unavailable = isUnavailableHere(defaultPkg);
+  const fromPrefix = defaultPkg?.price_is_from ? "From " : "";
 
   const openQuickView = () => {
     if (onQuickView) {
@@ -41,6 +48,8 @@ export function ServiceCard({
         <div>
           <Link
             href={detailHref}
+            tabIndex={-1}
+            aria-hidden="true"
             className="relative mb-3.5 block aspect-[16/7] w-full overflow-hidden rounded-md bg-[#F4EFE9]"
           >
             {imgSrc ? (
@@ -82,12 +91,21 @@ export function ServiceCard({
 
             <div className="mt-2 flex flex-wrap items-baseline gap-1.5">
               <span className="price-note font-bold text-[#800020]">
-                {unitPaise != null ? formatInr(unitPaise) : formatStartingPrice(service)}
+                {unitPaise != null ? `${fromPrefix}${formatInr(unitPaise)}` : formatStartingPrice(service)}
               </span>
               {showStrike && originalPaise != null && (
-                <span className="text-[11px] text-[#78716C] line-through">{formatInr(originalPaise)}</span>
+                <span className="text-[11px] text-[#78716C] line-through">
+                  <span className="sr-only">Original price </span>
+                  {formatInr(originalPaise)}
+                </span>
+              )}
+              {discount != null && discount > 0 && (
+                <span className="rounded bg-[#E7F3EC] px-1.5 py-0.5 text-[10px] font-bold text-[#1F6B44]">{discount}% off</span>
               )}
             </div>
+            {unavailable && (
+              <p className="mt-1 text-[11px] font-semibold text-[#9A3412]">Not offered in your area yet</p>
+            )}
           </div>
         </div>
 
@@ -103,7 +121,7 @@ export function ServiceCard({
             <Link
               href={`/book?service=${encodeURIComponent(service.slug)}`}
               className="service-card-action inline-flex min-h-[36px] items-center gap-0.5 px-1.5 text-xs font-bold"
-              aria-label={`Start booking ${service.name}`}
+              aria-label={`Book ${service.name}`}
             >
               Book <ArrowUpRight size={13} strokeWidth={1.5} />
             </Link>
@@ -133,8 +151,9 @@ export function ServiceCard({
             ) : (
               <button
                 type="button"
+                disabled={unavailable}
                 onClick={() => addToCart(service, defaultPkg, 1, "", false)}
-                className="flex min-h-[42px] w-full items-center justify-center gap-1.5 rounded-md bg-[#f5ebe8] px-3 text-xs font-bold text-[#800020] transition hover:bg-[#800020] hover:text-white"
+                className="flex min-h-[42px] w-full disabled:cursor-not-allowed disabled:opacity-50 items-center justify-center gap-1.5 rounded-md bg-[#f5ebe8] px-3 text-xs font-bold text-[#800020] transition hover:bg-[#800020] hover:text-white"
               >
                 <Plus size={13} strokeWidth={1.75} /> Add to cart
               </button>

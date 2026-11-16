@@ -10,6 +10,7 @@ import { ServiceImage } from "@/components/service-image";
 import { bookingApi } from "@/lib/booking-api";
 import { resolveUploadedMediaUrl, servicePopupCoverImage } from "@/lib/service-images";
 import { formatInr } from "@/lib/services";
+import { isUnavailableHere, useZonePincode, useZoneService } from "./zone-pricing-provider";
 
 export type ServiceModalProps = {
   service: Service;
@@ -24,7 +25,24 @@ function formatReviewDate(dateStr?: string) {
   return dt.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function ServiceDetailModal({ service, onClose, syncUrl = true }: ServiceModalProps) {
+export function ServiceDetailModal({ service: baseService, onClose, syncUrl = true }: ServiceModalProps) {
+  const zoneService = useZoneService(baseService);
+  const pincode = useZonePincode();
+  // One call returns area prices, the latest reviews and the rating breakdown for the popup.
+  const [quick, setQuick] = useState<{ key: string; data: Service | null } | null>(null);
+  const quickKey = `${baseService.slug}|${pincode ?? ""}`;
+  useEffect(() => {
+    let active = true;
+    bookingApi
+      .quickView(baseService.slug, pincode ?? undefined)
+      .then((data) => active && setQuick({ key: quickKey, data }))
+      .catch(() => active && setQuick({ key: quickKey, data: null }));
+    return () => {
+      active = false;
+    };
+  }, [baseService.slug, pincode, quickKey]);
+  const quickData = quick?.key === quickKey ? quick.data : null;
+  const service: Service = quickData ? { ...zoneService, ...quickData } : zoneService;
   const packages = service.packages ?? [];
   const defaultIdx = Math.max(
     0,
@@ -32,17 +50,6 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
   );
   const [selectedPkgIndex, setSelectedPkgIndex] = useState(defaultIdx);
   const [addedFeedback, setAddedFeedback] = useState(false);
-  const [reviewsState, setReviewsState] = useState<{
-    loadedForKey: string | null;
-    averageRating: number | null;
-    reviewCount: number;
-    results: PublicReview[];
-  }>({
-    loadedForKey: null,
-    averageRating: service.rating_avg ?? null,
-    reviewCount: service.review_count ?? 0,
-    results: [],
-  });
 
   const { addToCart, openSheet } = useBookingCart();
   const titleId = useId();
@@ -58,6 +65,10 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
   const unitPaise = getPackageUnitPaise(service, pkg);
   const originalPaise = pkg?.original_price_paise ?? null;
   const showStrike = Boolean(originalPaise && unitPaise != null && originalPaise > unitPaise);
+  const discountPct = showStrike && originalPaise && unitPaise != null
+    ? Math.round(((originalPaise - unitPaise) * 100) / originalPaise)
+    : null;
+  const unavailableHere = isUnavailableHere(pkg);
   const popupCover = servicePopupCoverImage(service);
 
   const inclusions =
@@ -130,57 +141,11 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
     };
   }, [service.slug, syncUrl]);
 
-  // Fetch service reviews on open
-  const reviewKey = service.slug || service.id;
-  const reviewsLoading = reviewsState.loadedForKey !== reviewKey;
-  useEffect(() => {
-    let active = true;
-    const targetKey = reviewKey;
-    const fetcher = bookingApi.serviceReviews;
-    if (!fetcher) {
-      const t = window.setTimeout(() => {
-        if (active) {
-          setReviewsState({
-            loadedForKey: targetKey,
-            averageRating: service.rating_avg ?? null,
-            reviewCount: service.review_count ?? 0,
-            results: [],
-          });
-        }
-      }, 0);
-      return () => {
-        active = false;
-        window.clearTimeout(t);
-      };
-    }
-
-    fetcher(targetKey)
-      .then((res) => {
-        if (!active) return;
-        setReviewsState({
-          loadedForKey: targetKey,
-          averageRating: res.average_rating ?? service.rating_avg ?? null,
-          reviewCount: res.review_count ?? res.results?.length ?? 0,
-          results: res.results ?? [],
-        });
-      })
-      .catch(() => {
-        if (!active) return;
-        setReviewsState({
-          loadedForKey: targetKey,
-          averageRating: service.rating_avg ?? null,
-          reviewCount: service.review_count ?? 0,
-          results: [],
-        });
-      });
-    return () => {
-      active = false;
-    };
-  }, [reviewKey, service.rating_avg, service.review_count]);
-
-  const avgRating = reviewsState.averageRating ?? service.rating_avg ?? null;
-  const totalReviewCount = reviewsState.reviewCount ?? service.review_count ?? 0;
-  const latestReviews = reviewsState.results.slice(0, 5);
+  const reviewsLoading = quick?.key !== quickKey;
+  const avgRating = service.average_rating ?? service.rating_avg ?? null;
+  const totalReviewCount = service.review_count ?? 0;
+  const latestReviews: PublicReview[] = (service.recent_reviews ?? []).slice(0, 5);
+  const breakdown = service.rating_breakdown;
   const fullDetailHref = `/services/${encodeURIComponent(service.category)}/${encodeURIComponent(service.slug)}`;
 
   const handleAddToCart = () => {
@@ -403,6 +368,23 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
                 </Link>
               </div>
 
+              {!reviewsLoading && breakdown && totalReviewCount > 0 && (
+                <div className="mb-3 space-y-1" aria-label="Rating breakdown">
+                  {(["5", "4", "3", "2", "1"] as const).map((star) => {
+                    const count = breakdown[star] ?? 0;
+                    const pct = totalReviewCount ? Math.round((count * 100) / totalReviewCount) : 0;
+                    return (
+                      <div key={star} className="flex items-center gap-2 text-[11px] text-[#57534E]">
+                        <span className="w-6">{star}★</span>
+                        <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#F4EFE9]" aria-hidden="true">
+                          <span className="block h-full rounded-full bg-[#C8A35B]" style={{ width: `${pct}%` }} />
+                        </span>
+                        <span className="w-8 text-right">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {reviewsLoading ? (
                 <div className="space-y-2" aria-busy="true">
                   <div className="h-10 animate-pulse rounded-md bg-[#F4EFE9]" />
@@ -480,9 +462,18 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
                   {unitPaise != null ? formatInr(unitPaise) : "Quote on inspection"}
                 </strong>
                 {showStrike && originalPaise != null && (
-                  <span className="text-xs text-[#78716C] line-through">{formatInr(originalPaise)}</span>
+                  <span className="text-xs text-[#78716C] line-through">
+                    <span className="sr-only">Original price </span>
+                    {formatInr(originalPaise)}
+                  </span>
+                )}
+                {discountPct != null && discountPct > 0 && (
+                  <span className="rounded bg-[#E7F3EC] px-1.5 py-0.5 text-[10px] font-bold text-[#1F6B44]">{discountPct}% off</span>
                 )}
               </div>
+              {unavailableHere && (
+                <span className="block text-[11px] font-semibold text-[#9A3412]">Not offered in your area yet</span>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -510,8 +501,9 @@ export function ServiceDetailModal({ service, onClose, syncUrl = true }: Service
               ) : pkg ? (
                 <button
                   type="button"
+                  disabled={unavailableHere}
                   onClick={handleAddToCart}
-                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017]"
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-[#800020] px-6 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span>Add to cart</span>
                   <ArrowRight size={15} strokeWidth={1.75} />

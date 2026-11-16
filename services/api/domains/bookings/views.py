@@ -83,6 +83,7 @@ class HoldDetailView(APIView):
 class QuoteInput(serializers.Serializer):
     hold_id = serializers.UUIDField()
     items = serializers.ListField(child=serializers.DictField(), required=False)
+    coupon_code = serializers.CharField(max_length=40, required=False, allow_blank=True)
 
 
 class QuoteView(APIView):
@@ -95,6 +96,7 @@ class QuoteView(APIView):
             request.user,
             data.validated_data["hold_id"],
             cart_items=data.validated_data.get("items"),
+            coupon_code=data.validated_data.get("coupon_code") or "",
         )
         return Response(serialize_quote(quote), status=201)
 

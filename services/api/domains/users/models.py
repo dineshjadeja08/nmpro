@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -43,3 +44,19 @@ class BlacklistedRefreshToken(UUIDStampedModel):
     jti = models.CharField(max_length=64, unique=True)
     user = models.ForeignKey("users.User", on_delete=models.CASCADE)
     expires_at = models.DateTimeField()
+
+
+class DataRequest(UUIDStampedModel):
+    """A person's request to download or delete their personal data (DPDP Act)."""
+    KINDS = [("EXPORT", "Copy of my data"), ("DELETE", "Delete my account")]
+    STATUSES = [("RECEIVED", "Received"), ("COMPLETED", "Completed"), ("REJECTED", "Rejected")]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="data_requests")
+    phone_e164 = models.CharField(max_length=16)
+    kind = models.CharField(max_length=8, choices=KINDS)
+    status = models.CharField(max_length=10, choices=STATUSES, default="RECEIVED")
+    reason = models.CharField(max_length=300, blank=True, default="")
+    resolution_note = models.CharField(max_length=300, blank=True, default="")
+    completed_at = models.DateTimeField(null=True, blank=True)
+    handled_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="+")

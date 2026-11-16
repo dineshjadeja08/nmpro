@@ -11,11 +11,15 @@ class DeliveryUnavailable(Exception):
 class MSG91WhatsAppProvider:
     endpoint = "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk"
 
-    def send_template(self, phone_e164, template_name, booking_reference):
+    def send_template(self, phone_e164, template_name, values):
+        """`values` is the ordered list of body variables (a single string is accepted too)."""
+        values = [values] if isinstance(values, str) else list(values)
         if (not re.fullmatch(r"\+91[6-9]\d{9}", phone_e164)
                 or not re.fullmatch(r"[a-z0-9_]{1,100}", template_name)
-                or len(booking_reference) > 32):
+                or not values or len(values) > 10
+                or any(not isinstance(v, str) or len(v) > 60 for v in values)):
             raise DeliveryUnavailable("Invalid template parameters")
+        components = {f"body_{i}": {"type": "text", "value": v} for i, v in enumerate(values, start=1)}
         payload = {
             "integrated_number": settings.WHATSAPP_INTEGRATED_NUMBER,
             "content_type": "template",
@@ -24,8 +28,7 @@ class MSG91WhatsAppProvider:
                                      "language": {"code": settings.WHATSAPP_LANGUAGE_CODE,
                                                   "policy": "deterministic"},
                                      "to_and_components": [{"to": [phone_e164.lstrip("+")],
-                                                            "components": {"body_1": {"type": "text",
-                                                                                      "value": booking_reference}}}]}}}
+                                                            "components": components}]}}}
         try:
             response = requests.post(self.endpoint, json=payload,
                                      headers={"authkey": settings.MSG91_AUTH_KEY,

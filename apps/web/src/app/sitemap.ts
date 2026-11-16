@@ -1,11 +1,22 @@
 import type { MetadataRoute } from "next";
-import { getCatalog } from "@/lib/catalog";
+import { api, getCatalog } from "@/lib/catalog";
+
+export const revalidate = 3600;
+
+const STATIC_PATHS = ["", "/services", "/about", "/faq", "/support", "/blog", "/join-as-technician", "/terms", "/privacy-policy", "/cancellation-policy"];
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const origin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const { data } = await getCatalog();
+  const [{ data }, landing, blog] = await Promise.all([
+    getCatalog(),
+    api.landingPages().catch(() => ({ slugs: [] as string[] })),
+    api.blogPosts().catch(() => ({ results: [] })),
+  ]);
   const categoryPaths = data?.categories.map((c) => `/services/${c.slug}`) ?? [];
   const servicePaths = data?.services.map((s) => `/services/${s.category}/${s.slug}`) ?? [];
-  return ["", "/services", ...categoryPaths, ...servicePaths].map((path) => ({
+  const landingPaths = landing.slugs.map((slug) => `/${slug}`);
+  const blogPaths = blog.results.map((p) => `/blog/${p.slug}`);
+  return [...STATIC_PATHS, ...categoryPaths, ...servicePaths, ...landingPaths, ...blogPaths].map((path) => ({
     url: `${origin}${path}`,
     changeFrequency: "weekly" as const,
   }));

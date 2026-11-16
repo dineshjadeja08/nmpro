@@ -176,6 +176,27 @@ vi.mock("@/lib/booking-api", () => ({
       ],
     }),
     putCartItem: vi.fn().mockResolvedValue({ id: "cart-1", items: [] }),
+    mergeCart: vi.fn().mockResolvedValue({ id: "cart-1", item_count: 0, items: [], skipped: [] }),
+    offers: vi.fn().mockResolvedValue({ offers: [] }),
+    referral: vi.fn().mockRejectedValue(new Error("Unauthorized")),
+    zoneServices: vi.fn().mockResolvedValue({ services: [] }),
+    technicianLocation: vi.fn().mockResolvedValue({ sharing: false, status: null, destination: null }),
+    quickView: vi.fn().mockResolvedValue({
+      average_rating: 4.8,
+      review_count: 1,
+      rating_breakdown: { "5": 1, "4": 0, "3": 0, "2": 0, "1": 0 },
+      recent_reviews: [
+        {
+          id: "rev-1",
+          rating: 5,
+          comment: "Super clean foam wash.",
+          customer_name: "Anitha R.",
+          area: "Anna Nagar",
+          technician_name: "Suresh",
+          created_at: "2030-01-01T10:00:00Z",
+        },
+      ],
+    }),
   },
 }));
 
