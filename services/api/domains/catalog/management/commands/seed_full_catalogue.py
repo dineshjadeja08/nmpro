@@ -907,11 +907,18 @@ class Command(BaseCommand):
                 "banner_img": "/images/banners/tv-repair.png",
                 "services": [
                     from_raw("tv-repair-services", name="TV Repair & Services", is_active=True, is_popular=True),
-                    from_raw("tv-wall-mount-up-to-26-inch", name="TV Wall Mount - Up to 26 inch", is_active=True),
-                    from_raw("tv-wall-mount-32-to-43-inch", name="TV Wall Mount - 32 to 43 inch", is_active=True),
-                    from_raw("tv-wall-mount-46-to-55-inch", name="TV Wall Mount - 46 to 55 inch", advance_paise=10000, is_active=True),
-                    from_raw("tv-wall-mount-56-to-65-inch", name="TV Wall Mount - 56 to 65 inch", advance_paise=10000, is_active=True),
-                    from_raw("tv-wall-mount-over-75-inch", name="TV Wall Mount - Over 75 inch", is_active=True),
+                    # One service; the customer picks the TV size (an option each) in the pop-up.
+                    from_raw(
+                        "tv-wall-mount-up-to-26-inch", slug="tv-installation", name="TV Installation", is_active=True,
+                        short_description="TV wall mounting with bracket alignment and a basic safety check. Pick your TV size.",
+                        options=[
+                            from_raw("tv-wall-mount-up-to-26-inch", name="Up to 26 inch", is_active=True),
+                            from_raw("tv-wall-mount-32-to-43-inch", name="32 to 43 inch", is_active=True),
+                            from_raw("tv-wall-mount-46-to-55-inch", name="46 to 55 inch", advance_paise=10000, is_active=True),
+                            from_raw("tv-wall-mount-56-to-65-inch", name="56 to 65 inch", advance_paise=10000, is_active=True),
+                            from_raw("tv-wall-mount-over-75-inch", name="Over 75 inch", is_active=True),
+                        ],
+                    ),
                 ],
             },
             {
@@ -1064,14 +1071,10 @@ class Command(BaseCommand):
 
             for s_order, s_data in enumerate(cat_data["services"], start=1):
                 canonical_service_slugs.append(s_data["slug"])
-                curr_price = s_data.get("current_price")
-                base_price = s_data.get("base_price")
+                options = s_data.get("options") or [s_data]
+                option_prices = [o["current_price"] for o in options if o.get("current_price") is not None]
+                curr_price = min(option_prices) if option_prices else None
                 selling_paise = int(round(curr_price * 100)) if curr_price is not None else None
-                original_paise = (
-                    int(round(base_price * 100))
-                    if base_price is not None and selling_paise is not None and base_price > curr_price
-                    else None
-                )
                 s_photo = resolve_local_photo(s_data["name"])
                 service, _ = Service.objects.update_or_create(
                     slug=s_data["slug"],
@@ -1101,43 +1104,52 @@ class Command(BaseCommand):
                     cov.is_active = s_data["is_active"]
                     cov.save()
 
-                pkg, _ = ServicePackage.objects.update_or_create(
-                    service=service,
-                    name=s_data["name"],
-                    defaults={
-                        "pricing_model": s_data["pricing_model"],
-                        "duration_minutes": s_data["duration"],
-                        "skill_code": f"{category.slug.upper().replace('-', '_')}_SPECIALIST",
-                        "description": s_data["short_description"],
-                        "inclusions": s_data["inclusions"],
-                        "exclusions": s_data["exclusions"],
-                        "original_price_paise": original_paise,
-                        "is_active": s_data["is_active"],
-                    },
-                )
-                total_packages += 1
-                if s_data["is_active"]:
-                    active_packages.append(pkg)
+                for opt in options:
+                    opt_curr = opt.get("current_price")
+                    opt_base = opt.get("base_price")
+                    opt_selling = int(round(opt_curr * 100)) if opt_curr is not None else None
+                    opt_original = (
+                        int(round(opt_base * 100))
+                        if opt_base is not None and opt_selling is not None and opt_base > opt_curr
+                        else None
+                    )
+                    pkg, _ = ServicePackage.objects.update_or_create(
+                        service=service,
+                        name=opt["name"],
+                        defaults={
+                            "pricing_model": opt["pricing_model"],
+                            "duration_minutes": opt["duration"],
+                            "skill_code": f"{category.slug.upper().replace('-', '_')}_SPECIALIST",
+                            "description": opt["short_description"],
+                            "inclusions": opt["inclusions"],
+                            "exclusions": opt["exclusions"],
+                            "original_price_paise": opt_original,
+                            "is_active": opt["is_active"],
+                        },
+                    )
+                    total_packages += 1
+                    if opt["is_active"]:
+                        active_packages.append(pkg)
 
-                if selling_paise is not None and selling_paise > 0:
-                    adv_paise = s_data.get("advance_paise", 0)
-                    policy = "ADVANCE" if adv_paise > 0 else "PREPAID"
-                    adv_type = "FIXED" if adv_paise > 0 else "NONE"
-                    is_inspection = (pkg.pricing_model == "INSPECTION_BASED")
-                    base_paise_val = 0 if is_inspection else selling_paise
-                    insp_paise_val = selling_paise if is_inspection else 0
+                    if opt_selling is not None and opt_selling > 0:
+                        adv_paise = opt.get("advance_paise", 0)
+                        policy = "ADVANCE" if adv_paise > 0 else "PREPAID"
+                        adv_type = "FIXED" if adv_paise > 0 else "NONE"
+                        is_inspection = (pkg.pricing_model == "INSPECTION_BASED")
+                        base_paise_val = 0 if is_inspection else opt_selling
+                        insp_paise_val = opt_selling if is_inspection else 0
 
-                    for z in zones:
-                        p_rule = PricingRule.objects.filter(package=pkg, zone=z).order_by("-version").first()
-                        if not p_rule:
-                            p_rule = PricingRule(package=pkg, zone=z, version=1)
-                        p_rule.base_paise = base_paise_val
-                        p_rule.inspection_paise = insp_paise_val
-                        p_rule.payment_policy = policy
-                        p_rule.advance_type = adv_type
-                        p_rule.advance_amount_paise = adv_paise
-                        p_rule.is_active = s_data["is_active"]
-                        p_rule.save()
+                        for z in zones:
+                            p_rule = PricingRule.objects.filter(package=pkg, zone=z).order_by("-version").first()
+                            if not p_rule:
+                                p_rule = PricingRule(package=pkg, zone=z, version=1)
+                            p_rule.base_paise = base_paise_val
+                            p_rule.inspection_paise = insp_paise_val
+                            p_rule.payment_policy = policy
+                            p_rule.advance_type = adv_type
+                            p_rule.advance_amount_paise = adv_paise
+                            p_rule.is_active = opt["is_active"]
+                            p_rule.save()
 
         # Deactivate any legacy/duplicate categories and services outside the canonical set
         deactivated_cats = Category.objects.exclude(slug__in=canonical_category_slugs).update(is_active=False)

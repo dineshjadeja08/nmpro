@@ -1,7 +1,7 @@
 "use client";
 
 import type { PublicReview, Service } from "@nammapros/types";
-import { ArrowRight, Check, Clock, ShieldCheck, Sparkles, Star, X } from "lucide-react";
+import { ArrowRight, Check, Clock, Minus, Plus, ShieldCheck, Sparkles, Star, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useId, useRef, useState } from "react";
@@ -51,7 +51,7 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
   const [selectedPkgIndex, setSelectedPkgIndex] = useState(defaultIdx);
   const [addedFeedback, setAddedFeedback] = useState(false);
 
-  const { addToCart, openSheet } = useBookingCart();
+  const { items, addToCart, openSheet, updateItemQuantity } = useBookingCart();
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -252,53 +252,75 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
               </div>
             </section>
 
-            {/* 3. Package selector */}
+            {/* 3. Options (e.g. TV size): a card each with its price and its own Add */}
             {packages.length > 1 && (
-              <section aria-label="Package selector" className="space-y-2.5">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#57534E]">
-                  Choose a package
+              <section aria-labelledby={`${titleId}-options`} className="space-y-2.5">
+                <h3 id={`${titleId}-options`} className="text-base font-bold text-[#1C1917]">
+                  {packages.every((p) => /inch/i.test(p.name)) ? "Choose your TV size" : "Choose an option"}
                 </h3>
-                <div className="grid gap-2.5 sm:grid-cols-2">
+                <ul className="-mx-5 flex snap-x gap-3 overflow-x-auto scroll-px-5 px-5 pb-1 [scrollbar-width:thin] sm:-mx-6 sm:scroll-px-6 sm:px-6">
                   {packages.map((p, idx) => {
                     const pUnit = getPackageUnitPaise(service, p);
                     const pOrig = p.original_price_paise;
                     const pStrike = Boolean(pOrig && pUnit != null && pOrig > pUnit);
                     const active = selectedPkgIndex === idx;
+                    const inCart = items.find((i) => i.pkg.id === p.id);
+                    const pUnavailable = isUnavailableHere(p);
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => {
-                          setSelectedPkgIndex(idx);
-                          setAddedFeedback(false);
-                        }}
-                        className={`min-h-[48px] rounded-md border p-3.5 text-left transition ${
-                          active
-                            ? "border-2 border-[#800020] bg-[#f5ebe8] text-[#1C1917]"
-                            : "border-[#E8E1DB] bg-white text-[#1C1917] hover:border-[#800020]/45"
-                        }`}
-                      >
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="text-xs font-bold">{p.name}</span>
-                          {pUnit != null && (
-                            <span className="text-xs font-bold text-[#800020]">
-                              {formatInr(pUnit)}
+                      <li key={p.id} className="w-[148px] shrink-0 snap-start">
+                        <div
+                          className={`flex h-full flex-col rounded-xl border bg-white p-3 transition ${
+                            active ? "border-[#800020] ring-1 ring-[#800020]" : "border-[#E8E1DB]"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => {
+                              setSelectedPkgIndex(idx);
+                              setAddedFeedback(false);
+                            }}
+                            className="flex-1 text-left"
+                          >
+                            <span className="block text-sm font-semibold leading-snug text-[#1C1917]">{p.name}</span>
+                            <span className="mt-1.5 block text-sm">
+                              <span className="font-bold text-[#1C1917]">{pUnit != null ? formatInr(pUnit) : "Quote"}</span>
                               {pStrike && pOrig != null && (
-                                <span className="ml-1 font-normal text-[#78716C] line-through">
-                                  {formatInr(pOrig)}
-                                </span>
+                                <span className="ml-1.5 text-xs text-[#78716C] line-through">{formatInr(pOrig)}</span>
                               )}
                             </span>
+                            <span className="mt-0.5 block text-[11px] text-[#78716C]">{p.duration_minutes} mins</span>
+                          </button>
+                          {inCart ? (
+                            <span className="mt-2.5 inline-flex h-9 items-center justify-between rounded-lg border border-[#800020] bg-[#F6E7EB] text-sm font-bold text-[#800020]">
+                              <button type="button" aria-label={`One less ${p.name}`} onClick={() => updateItemQuantity(p.id, inCart.quantity - 1)} className="grid h-9 w-9 place-items-center">
+                                <Minus size={14} />
+                              </button>
+                              <span aria-live="polite">{inCart.quantity}</span>
+                              <button type="button" aria-label={`One more ${p.name}`} disabled={inCart.quantity >= 10} onClick={() => updateItemQuantity(p.id, inCart.quantity + 1)} className="grid h-9 w-9 place-items-center disabled:opacity-40">
+                                <Plus size={14} />
+                              </button>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={pUnavailable}
+                              onClick={() => {
+                                setSelectedPkgIndex(idx);
+                                addToCart(service, p, 1, "", false);
+                                setAddedFeedback(true);
+                              }}
+                              aria-label={`Add ${p.name}`}
+                              className="mt-2.5 h-9 rounded-lg border border-[#D6CBC4] bg-white text-sm font-bold text-[#800020] transition hover:border-[#800020] disabled:opacity-50"
+                            >
+                              Add
+                            </button>
                           )}
                         </div>
-                        <span className="mt-0.5 block text-[11px] text-[#57534E]">
-                          {p.duration_minutes} mins
-                        </span>
-                      </button>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               </section>
             )}
 
