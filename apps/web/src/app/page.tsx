@@ -3,7 +3,6 @@ import {
   Star,
 } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { HomeCategoryGrid } from "@/components/home-category-grid";
 import { MostBookedServices } from "@/components/most-booked-services";
 import { OfferSpotlight } from "@/components/offer-spotlight";
@@ -123,43 +122,16 @@ export default async function Home() {
         </section>
       )}
 
-      {/* 7. Bottom Dual Support & Partner Cards */}
-      <section className="container pt-4 pb-8">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex flex-col justify-between rounded-lg bg-[#E7F2EC] p-6 sm:p-7">
-            <div>
-              <h2 className="font-serif text-xl font-semibold text-[#1C1917]">Not sure what to book?</h2>
-              <p className="mt-1.5 text-xs leading-relaxed text-[#3F5248]">
-                Tell us what’s happening in plain words — we’ll guide you to the right service before you book.
-              </p>
-            </div>
-            <div className="mt-5">
-              <Link
-                href="/search"
-                className="inline-flex min-h-[42px] items-center rounded-md bg-[#117A4B] px-5 text-xs font-bold text-white transition hover:bg-[#0D603B]"
-              >
-                Get help choosing
-              </Link>
-            </div>
-          </div>
-
-          <div className="flex flex-col justify-between rounded-lg bg-[#F6E9EE] p-6 sm:p-7">
-            <div>
-              <h2 className="font-serif text-xl font-semibold text-[#1C1917]">Are you a skilled technician?</h2>
-              <p className="mt-1.5 text-xs leading-relaxed text-[#5B444B]">
-                Get steady jobs in your area and clear weekly payouts across Chennai &amp; Tamil Nadu.
-              </p>
-            </div>
-            <div className="mt-5">
-              <Link
-                href="/join-as-technician"
-                className="inline-flex min-h-[42px] items-center rounded-md bg-[#800020] px-5 text-xs font-bold text-white transition hover:bg-[#5e0017]"
-              >
-                Join as a pro
-              </Link>
-            </div>
-          </div>
-        </div>
+      {/* 7. App download banner */}
+      <section className="container pt-4 pb-10" aria-label="Get the NammaPros app">
+        <Image
+          src="/images/brand/app-download-banner.webp"
+          alt="All your home services, just one place. Download the NammaPros app on the App Store or Google Play."
+          width={1600}
+          height={534}
+          unoptimized
+          className="h-auto w-full rounded-2xl"
+        />
       </section>
 
       {/* 8. Best AC service: five AC services, same card as "Most booked" */}

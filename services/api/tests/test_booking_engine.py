@@ -279,10 +279,11 @@ def test_whatsapp_outbox_dispatch_requires_opt_in_and_approved_template(setup_bo
     class Provider:
         called = 0
 
-        def send_template(self, phone, template, reference):
+        def send_template(self, phone, template, values):
             assert phone == s["user"].phone_e164
             assert template == "booking_confirmed"
-            assert reference == response.json()["reference"]
+            # Template values: booking reference first, then service, date and time.
+            assert values[0] == response.json()["reference"] and len(values) == 4
             self.called += 1
             return "msg-test-1"
 
@@ -356,8 +357,8 @@ def test_configured_sms_and_email_dispatch_keep_provider_acceptance_separate(mon
     settings.EMAIL_PROVIDER = "SMTP"
 
     class SMSProvider:
-        def send_template(self, phone, template, reference):
-            assert (phone, template, reference) == ("+919876543218", "template_test", "NP-TEST")
+        def send_template(self, phone, template, values):
+            assert (phone, template, values[0]) == ("+919876543218", "template_test", "NP-TEST")
             return "sms-request-test"
 
     class EmailProvider:

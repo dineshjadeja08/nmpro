@@ -34,6 +34,18 @@ def shop(db, django_capture_on_commit_callbacks):
     return {"package": package, "zone": zone, "slots": slots, "service": service}
 
 
+@pytest.fixture
+def promo_shop(shop, settings):
+    """Discounts come off the online advance, so the price takes a ₹500 advance. General coupons are
+    switched off in production (COUPONS_ENABLED); these tests switch them on to cover the coupon rules."""
+    PricingRule.objects.filter(package=shop["package"]).update(
+        payment_policy="ADVANCE", advance_type="FIXED", advance_amount_paise=50000)
+    settings.COUPONS_ENABLED = True
+    settings.RAZORPAY_ENABLED = True  # an advance is paid online
+    settings.RAZORPAY_KEY_ID = "rzp_test_public"
+    return shop
+
+
 def customer(phone, name="Asha"):
     user = User.objects.create_user(username=phone, phone_e164=phone, first_name=name)
     address = Address.objects.create(user=user, line_1="12 North Street", locality="Mylapore", city="Chennai",
@@ -60,7 +72,8 @@ def book(client, shop, address, slot_index=0, code="", key="k"):
     return quote, booking
 
 
-def test_flat_and_percent_coupons_apply_and_are_limited(shop):
+def test_flat_and_percent_coupons_apply_and_are_limited(promo_shop):
+    shop = promo_shop
     Coupon.objects.create(code="FLAT150", discount_type="FLAT", value=15000, description="₹150 off")
     Coupon.objects.create(code="TENPC", discount_type="PERCENT", value=10, max_discount_paise=5000)
     user, address, client = customer("+919800000101")
@@ -80,7 +93,8 @@ def test_flat_and_percent_coupons_apply_and_are_limited(shop):
     assert pct.json()["discount_paise"] == 5000  # 10% of ₹1000 capped at ₹50
 
 
-def test_coupon_rules(shop):
+def test_coupon_rules(promo_shop):
+    shop = promo_shop
     now = timezone.now()
     Coupon.objects.create(code="OLD", discount_type="FLAT", value=1000, valid_until=now - timedelta(days=1))
     Coupon.objects.create(code="BIG", discount_type="FLAT", value=1000, min_order_paise=500000)
@@ -97,7 +111,8 @@ def test_coupon_rules(shop):
     assert "first booking" in str(book(client, shop, address, 1, "FIRST", "b6")[0].content)
 
 
-def test_coupon_released_when_booking_cancelled(shop, django_capture_on_commit_callbacks):
+def test_coupon_released_when_booking_cancelled(promo_shop, django_capture_on_commit_callbacks):
+    shop = promo_shop
     Coupon.objects.create(code="ONCE", discount_type="FLAT", value=1000, usage_limit=1)
     user, address, client = customer("+919800000103")
     _, booking = book(client, shop, address, 0, "ONCE", "c1")
@@ -108,7 +123,8 @@ def test_coupon_released_when_booking_cancelled(shop, django_capture_on_commit_c
     assert not CouponRedemption.objects.exists()
 
 
-def test_referral_discount_and_reward(shop, django_capture_on_commit_callbacks):
+def test_referral_discount_and_reward(promo_shop, django_capture_on_commit_callbacks):
+    shop = promo_shop
     referrer, _, ref_client = customer("+919800000104", "Ravi")
     code = ref_client.get("/api/v1/referrals/me/").json()["code"]
     assert code.startswith("NP")
@@ -134,7 +150,32 @@ def test_referral_discount_and_reward(shop, django_capture_on_commit_callbacks):
     assert "not valid" in str(book(other_client, shop, other_addr, 1, reward_code, "r3")[0].content)
 
 
-def test_public_offers_and_admin_coupons(shop):
+def test_general_coupons_off_by_default_but_referrals_work(shop, settings):
+    """Production default: offer codes are switched off, referral codes still take money off the advance,
+    and a service paid fully at the visit takes no code at all."""
+    settings.COUPONS_ENABLED = False
+    Coupon.objects.create(code="PUBLIC", discount_type="FLAT", value=1000)
+    assert APIClient().get("/api/v1/offers/").json()["offers"] == []
+
+    referrer, _, ref_client = customer("+919800000110", "Ravi")
+    code = ref_client.get("/api/v1/referrals/me/").json()["code"]
+    user, address, client = customer("+919800000111")
+    assert "paid fully at the visit" in str(book(client, shop, address, 0, code, "d0")[0].content)
+
+    PricingRule.objects.filter(package=shop["package"]).update(
+        payment_policy="ADVANCE", advance_type="FIXED", advance_amount_paise=50000)
+    settings.RAZORPAY_ENABLED = True
+    settings.RAZORPAY_KEY_ID = "rzp_test_public"
+    assert "not valid" in str(book(client, shop, address, 0, "PUBLIC", "d1")[0].content)
+    quote, booking = book(client, shop, address, 0, code, "d2")
+    assert quote.status_code == 201, quote.content
+    q = quote.json()
+    assert q["discount_paise"] == 10000 and q["advance_paise"] == 40000
+    assert q["remaining_balance_paise"] == 50000  # the professional still collects the full balance
+
+
+def test_public_offers_and_admin_coupons(promo_shop):
+    shop = promo_shop
     Coupon.objects.create(code="PUBLIC", discount_type="FLAT", value=1000)
     Coupon.objects.create(code="EXPIRED", discount_type="FLAT", value=1000, valid_until=timezone.now() - timedelta(days=1))
     owner = User.objects.create_user(username="+919800000107", phone_e164="+919800000107")

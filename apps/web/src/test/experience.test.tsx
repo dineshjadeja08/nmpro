@@ -8,7 +8,6 @@ import { LocationProvider } from "@/components/location-provider";
 import { ProblemSearch } from "@/components/problem-search";
 import { ServiceCard } from "@/components/service-card";
 import { ServiceDetailModal } from "@/components/service-detail-modal";
-import { ServiceDetailView } from "@/components/service-detail-view";
 import { SlotFirstCheckout } from "@/components/slot-first-checkout";
 import { BookingShell } from "@/features/booking/booking-shell";
 import { bookingApi } from "@/lib/booking-api";
@@ -272,43 +271,6 @@ describe("customer experience", () => {
     render(<ServiceCard service={service} />);
     expect(screen.getByText("AC Service & Repair")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Start booking AC Service & Repair" }).getAttribute("href")).toContain("/book?service=");
-  });
-
-  it("renders rich service detail view and slides open cart sheet on Add", async () => {
-    render(
-      <LocationProvider>
-        <BookingCartProvider>
-          <ServiceDetailView
-            category={{ id: "c1", slug: "ac", name: "AC", description: "Cooling" }}
-            service={service}
-            relatedServices={[]}
-            reviewSummary={{
-              average_rating: 4.8,
-              review_count: 1,
-              rating_breakdown: { "5": 1, "4": 0, "3": 0, "2": 0, "1": 0 },
-              results: [
-                {
-                  id: "r1",
-                  rating: 5,
-                  comment: "Neat job in Anna Nagar.",
-                  customer_name: "Anitha",
-                  area: "Anna Nagar",
-                  technician_name: "Suresh K",
-                  created_at: "2030-01-01T10:00:00Z",
-                },
-              ],
-            }}
-          />
-          <BookingCartDrawer />
-        </BookingCartProvider>
-      </LocationProvider>
-    );
-    expect(screen.getByRole("heading", { name: "What’s included" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Not included" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "How we do it" })).toBeTruthy();
-    expect(screen.getByText("Most booked")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /Add · ₹649/i }));
-    expect(await screen.findByText("When should our pro visit?")).toBeTruthy();
   });
 
   it("filters deterministic problem suggestions", () => {
@@ -587,8 +549,8 @@ describe("customer experience", () => {
       ],
     });
 
-    const { default: CategoryOrServicePage } = await import("@/app/services/[slug]/page");
-    render(await CategoryOrServicePage({ params: Promise.resolve({ slug: "ac" }) }));
+    const { default: ServicesPage } = await import("@/app/services/page");
+    render(await ServicesPage({ searchParams: Promise.resolve({ category: "ac" }) }));
 
     expect(screen.getByText("AC Installation")).toBeTruthy();
     expect(screen.queryByText("Inactive AC Service")).toBeNull();
