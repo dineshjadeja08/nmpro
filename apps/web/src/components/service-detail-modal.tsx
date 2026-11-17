@@ -144,9 +144,24 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
   const reviewsLoading = quick?.key !== quickKey;
   const avgRating = service.average_rating ?? service.rating_avg ?? null;
   const totalReviewCount = service.review_count ?? 0;
-  const latestReviews: PublicReview[] = (service.recent_reviews ?? []).slice(0, 5);
+  // "See all reviews" loads more reviews here, 10 at a time. The pop-up is the service's only page.
+  const [allReviews, setAllReviews] = useState<{ items: PublicReview[]; nextPage: number | null; loading: boolean; error: string } | null>(null);
+  const loadReviews = async (page: number) => {
+    setAllReviews((cur) => ({ items: cur?.items ?? [], nextPage: cur?.nextPage ?? page, loading: true, error: "" }));
+    try {
+      const res = await bookingApi.serviceReviewsPage(service.slug || service.id, page);
+      setAllReviews((cur) => ({
+        items: page === 1 ? res.results : [...(cur?.items ?? []), ...res.results],
+        nextPage: res.next ? page + 1 : null,
+        loading: false,
+        error: "",
+      }));
+    } catch {
+      setAllReviews((cur) => ({ items: cur?.items ?? [], nextPage: cur?.nextPage ?? page, loading: false, error: "Could not load reviews. Try again." }));
+    }
+  };
+  const latestReviews: PublicReview[] = allReviews ? allReviews.items : (service.recent_reviews ?? []).slice(0, 5);
   const breakdown = service.rating_breakdown;
-  const fullDetailHref = `/services/${encodeURIComponent(service.category)}/${encodeURIComponent(service.slug)}`;
 
   const handleAddToCart = () => {
     if (!pkg) return;
@@ -359,13 +374,11 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
                     </span>
                   )}
                 </div>
-                <Link
-                  href={`${fullDetailHref}#reviews`}
-                  onClick={onClose}
-                  className="text-xs font-bold text-[#800020] hover:underline"
-                >
-                  See all reviews
-                </Link>
+                {!allReviews && totalReviewCount > latestReviews.length && (
+                  <button type="button" onClick={() => void loadReviews(1)} className="text-xs font-bold text-[#800020] hover:underline">
+                    See all reviews
+                  </button>
+                )}
               </div>
 
               {!reviewsLoading && breakdown && totalReviewCount > 0 && (
@@ -410,6 +423,13 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
                       {rev.comment && <p className="mt-1 text-xs leading-relaxed text-[#57534E]">{rev.comment}</p>}
                     </article>
                   ))}
+                  {allReviews?.error && <p role="alert" className="pt-2 text-xs font-semibold text-red-700">{allReviews.error}</p>}
+                  {allReviews?.nextPage && (
+                    <button type="button" disabled={allReviews.loading} onClick={() => void loadReviews(allReviews.nextPage!)}
+                      className="mt-2 min-h-[40px] w-full rounded-md border border-[#EAE3DC] text-xs font-bold text-[#1C1917] disabled:opacity-50">
+                      {allReviews.loading ? "Loading…" : "Show more reviews"}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <p className="text-xs text-[#78716C]">No reviews yet</p>

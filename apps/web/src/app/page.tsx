@@ -1,26 +1,25 @@
 import {
-  ArrowRight,
   CheckCircle2,
-  ShieldCheck,
   Star,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { CategoryIcon } from "@/components/category-icon";
-import { HeroLocationPill } from "@/components/hero-location-pill";
+import { HomeCategoryGrid } from "@/components/home-category-grid";
+import { MostBookedServices } from "@/components/most-booked-services";
 import { OfferSpotlight } from "@/components/offer-spotlight";
-import { ProblemSearch } from "@/components/problem-search";
-import { ServiceCatalogGrid } from "@/components/service-catalog-grid";
 import { ServiceImage } from "@/components/service-image";
+import { SpotlightBanners } from "@/components/spotlight-banners";
 import { getCatalog } from "@/lib/catalog";
 import { resolveUploadedMediaUrl } from "@/lib/service-images";
-import { filterCanonicalCategories, pickPopularServices } from "@/lib/services";
+import { pickPopularServices } from "@/lib/services";
 
 export default async function Home() {
-  const { data, error } = await getCatalog();
-  const categories = filterCanonicalCategories(data?.categories ?? []);
+  const { data } = await getCatalog();
   const services = data?.services ?? [];
-  const popularServices = pickPopularServices(services, 4);
+  const acServices = services
+    .filter((s) => s.is_active !== false && (s.category === "ac" || s.category === "air-conditioning"))
+    .sort((a, b) => Number(Boolean(b.is_popular)) - Number(Boolean(a.is_popular)) || (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    .slice(0, 5);
   const reviews = (data?.reviews ?? []).slice(0, 3);
   const banners = data?.banners ?? [];
   const trust = data?.trust_stats;
@@ -28,71 +27,16 @@ export default async function Home() {
   return (
     <main className="bg-[#FBF8F5]">
       {/* 1. Split Hero Banner (Blush Rose #FBECEF + Technician on Right) */}
-      <section className="relative overflow-hidden border-b border-[#EAE3DC] bg-[#FBECEF] pt-6 pb-6 text-[#1C1917] sm:pt-8 sm:pb-0">
+      <section id="categories" className="relative scroll-mt-20 overflow-hidden border-b border-[#EAE3DC] bg-white pt-6 pb-6 text-[#1C1917] sm:pt-8 sm:pb-0">
         <div className="container grid items-end gap-6 lg:grid-cols-[1.08fr_0.92fr] lg:gap-6">
-          <div className="max-w-2xl space-y-5 pb-0 sm:pb-6 lg:pb-10">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center rounded-md border border-[#800020]/15 bg-white px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#800020] shadow-2xs">
-                Namma area, namma pros.
-              </span>
-              <HeroLocationPill />
-            </div>
-
-            <h1 className="text-3xl font-bold tracking-tight text-[#1C1917] sm:text-5xl lg:text-[50px] lg:leading-[1.12]">
-              What’s not working{" "}
-              <span className="text-[#800020]">at home?</span>
+          <div className="max-w-xl pb-6 lg:pb-10">
+            <h1 className="mb-5 text-2xl font-bold tracking-tight text-[#1C1917] sm:mb-6 sm:text-4xl">
+              India&apos;s trusted <span className="text-[#800020]">home service</span>
             </h1>
-
-            <p className="max-w-lg text-sm font-normal leading-relaxed text-[#57534E] sm:text-base">
-              Tell us the problem. We send a verified pro in the slot you pick, with the price shown before you book.
-            </p>
-
-            <ProblemSearch showChips />
-
-            <div className="space-y-3 pt-1">
-              <div className="flex flex-wrap items-center gap-3">
-                <Link
-                  href="/book"
-                  className="inline-flex min-h-[44px] items-center gap-2 rounded-md bg-[#800020] px-5 text-xs font-bold text-white shadow-sm transition hover:bg-[#5e0017]"
-                >
-                  <span>Book a visit</span>
-                  <ArrowRight size={15} strokeWidth={2} />
-                </Link>
-                <Link
-                  href="/services"
-                  className="inline-flex min-h-[44px] items-center rounded-md border border-[#800020]/20 bg-white px-5 text-xs font-semibold text-[#1C1917] transition hover:border-[#800020] hover:text-[#800020]"
-                >
-                  Explore all services
-                </Link>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-medium text-[#57534E]">
-                <span className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 size={13} className="shrink-0 text-emerald-700" />
-                  Verified pros
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <ShieldCheck size={13} className="shrink-0 text-[#800020]" />
-                  30-day warranty
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <CheckCircle2 size={13} className="shrink-0 text-emerald-700" />
-                  Pay after transparent quote
-                </span>
-              </div>
-            </div>
+            <HomeCategoryGrid categories={data?.categories ?? []} services={services} />
           </div>
 
           <div className="relative hidden items-end justify-center sm:flex lg:justify-end">
-            {/* Architectural burgundy-tinted backdrop behind lower 75% so head breaks the top edge */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute bottom-0 left-8 right-0 top-[22%] rounded-t-lg border border-b-0 border-[#800020]/15 bg-[#800020]/[0.07] sm:left-16 lg:left-10"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute bottom-2 left-10 right-2 top-[24%] rounded-t-lg border border-b-0 border-white/70 sm:left-18 lg:left-12"
-            />
             <Image
               src="/images/brand/hero-technician-cutout.png"
               alt="Verified NammaPros home service technician"
@@ -125,106 +69,11 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* 2. Category Icon Grid (Homepage only: 2 rows x 7 columns on desktop) */}
-      {categories.length > 0 && (
-        <section className="container pt-10 pb-10" aria-label="Service categories">
-          <div className="mb-4 flex items-baseline justify-between gap-4">
-            <h2 className="font-serif text-xl font-semibold text-[#1C1917] sm:text-2xl">
-              What do you need fixed?
-            </h2>
-            <Link href="/services" className="text-xs font-bold text-[#800020] hover:underline">
-              See all services →
-            </Link>
-          </div>
+      {/* 2. Spotlight banners (each opens its service) */}
+      <SpotlightBanners categories={data?.categories ?? []} services={services} />
 
-          <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5 lg:grid-cols-7">
-            {categories.map((c) => (
-              <Link
-                key={c.id}
-                href={`/services/${encodeURIComponent(c.slug)}`}
-                className="group relative flex aspect-square w-full flex-col overflow-hidden rounded-lg border border-[#EAE3DC] bg-[#F5F5F5] text-inherit no-underline shadow-[0_2px_10px_rgba(28,25,23,0.03)] transition hover:border-[#800020]/50 md:hover:-translate-y-0.5 md:hover:shadow-[0_10px_24px_rgba(28,25,23,0.07)]"
-              >
-                <div className="relative min-h-0 w-full flex-1 p-2.5 sm:p-3.5">
-                  <div className="relative h-full w-full">
-                    <CategoryIcon category={c} fillContainer />
-                  </div>
-                </div>
-                <span className="w-full shrink-0 border-t border-[#EAE3DC]/80 bg-white/95 px-1.5 py-1.5 text-center text-[10px] font-semibold leading-tight text-[#1C1917] line-clamp-2 sm:text-xs">
-                  {c.name}
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* 3. 4-Column Divided Trust Strip */}
-      <section className="container pb-10">
-        <div className="grid divide-y divide-[#EAE3DC] overflow-hidden rounded-lg border border-[#EAE3DC] bg-white sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
-          {[
-            {
-              title: "Verified pros",
-              desc: "ID, address and skill checked before the first job.",
-            },
-            {
-              title: "Price before you book",
-              desc: "Every package shows what is included and what is not.",
-            },
-            {
-              title: "30-day service warranty",
-              desc: "Same issue comes back? We fix it free.",
-            },
-            {
-              title: "Free reschedule",
-              desc: "Change your slot up to 2 hours before the visit.",
-            },
-          ].map((item) => (
-            <div key={item.title} className="p-4 sm:p-5">
-              <strong className="block text-xs font-bold text-[#1C1917]">{item.title}</strong>
-              <p className="mt-1 text-[11px] leading-relaxed text-[#57534E]">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* 4. Three steps. No phone calls. */}
-      <section id="how-it-works" className="border-y border-[#EAE3DC] bg-white py-12">
-        <div className="container">
-          <h2 className="mb-6 font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">
-            Three steps. No phone calls.
-          </h2>
-          <div className="grid gap-4 md:grid-cols-3">
-            {[
-              {
-                step: "1",
-                title: "Pick",
-                desc: "Search your problem or choose a package. See the price and what’s included.",
-              },
-              {
-                step: "2",
-                title: "Schedule",
-                desc: "Pick a day and a 1-hour window. Confirm with a quick OTP — no account forms.",
-              },
-              {
-                step: "3",
-                title: "Relax",
-                desc: "See your pro’s name, arrival updates, and approve any extra parts cleanly.",
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                className="rounded-lg border border-[#EFE9E2] bg-[#FAF6F2] p-6"
-              >
-                <span className="grid h-7 w-7 place-items-center rounded-md bg-[#800020] text-xs font-bold text-white">
-                  {item.step}
-                </span>
-                <h3 className="mt-4 font-serif text-lg font-bold text-[#1C1917]">{item.title}</h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-[#57534E]">{item.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* 4. Most booked services */}
+      <MostBookedServices services={pickPopularServices(services, 5)} />
 
       {/* 5. Featured Dark Offer Card */}
       <OfferSpotlight banners={banners} />
@@ -313,38 +162,8 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* 8. Popular services (at the bottom of home page, above the footer, max 4) */}
-      <section className="container pb-14 pt-6" id="services">
-        <div className="mb-5 flex flex-wrap items-baseline justify-between gap-4">
-          <div>
-            <h2 className="font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">Popular services</h2>
-            <p className="mt-1 text-xs text-[#57534E]">
-              Most booked home services with upfront pricing and a 30-day warranty.
-            </p>
-          </div>
-          <Link href="/services" className="text-xs font-bold text-[#800020] hover:underline">
-            View all services →
-          </Link>
-        </div>
-
-        {error ? (
-          <div className="status-panel" role="alert">
-            <h3>Catalog temporarily unavailable</h3>
-            <p>{error}</p>
-            <Link href="/services">Try the service page</Link>
-          </div>
-        ) : popularServices.length > 0 ? (
-          <ServiceCatalogGrid
-            services={popularServices}
-            gridClassName="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
-          />
-        ) : (
-          <div className="status-panel">
-            <h3>Our catalog is being prepared</h3>
-            <p>No services are published yet. Please check back soon.</p>
-          </div>
-        )}
-      </section>
+      {/* 8. Best AC service: five AC services, same card as "Most booked" */}
+      <MostBookedServices id="best-ac" title="Best AC service" services={acServices} />
     </main>
   );
 }

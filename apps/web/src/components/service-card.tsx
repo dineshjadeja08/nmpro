@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { getPackageUnitPaise, pickDefaultPackage, useBookingCart } from "@/components/booking-cart-provider";
 import { ServiceImage } from "@/components/service-image";
 import { serviceListImage } from "@/lib/service-images";
-import { formatInr, formatStartingPrice } from "@/lib/services";
+import { formatInr, formatStartingPrice, serviceHref } from "@/lib/services";
 import { ServiceDetailModal } from "./service-detail-modal";
 import { isUnavailableHere, useZoneService } from "./zone-pricing-provider";
 
@@ -22,7 +22,7 @@ export function ServiceCard({
   const [showModal, setShowModal] = useState(false);
   const { items, addToCart, updateItemQuantity } = useBookingCart();
   const imgSrc = serviceListImage(service);
-  const detailHref = `/services/${encodeURIComponent(service.category)}/${encodeURIComponent(service.slug)}`;
+  const detailHref = serviceHref(service);
   const defaultPkg = pickDefaultPackage(service);
   const inCart = defaultPkg ? items.find((entry) => entry.pkg.id === defaultPkg.id) : undefined;
   const unitPaise = getPackageUnitPaise(service, defaultPkg);

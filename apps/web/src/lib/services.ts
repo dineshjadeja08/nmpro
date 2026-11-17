@@ -49,6 +49,27 @@ const INR_FORMATTER = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 0,
 });
 
+/** City name -> address form, e.g. "Chennai" -> "chennai". */
+export function citySlug(name?: string | null): string {
+  return (name ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+function servicesUrl(params: Record<string, string | undefined | null>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  return `/services?${q.toString()}`;
+}
+
+/** One services page: /services?city=chennai&category=ac */
+export function categoryHref(category: string, city?: string | null): string {
+  return servicesUrl({ city: city ? citySlug(city) : undefined, category });
+}
+
+/** A service has no page of its own: /services?city=chennai&category=ac&service=ac-chemical-wash opens its pop-up. */
+export function serviceHref(service: { category: string; slug: string }, city?: string | null): string {
+  return servicesUrl({ city: city ? citySlug(city) : undefined, category: service.category, service: service.slug });
+}
+
 export function formatInr(paise: number): string {
   return INR_FORMATTER.format(Math.round(paise / 100));
 }
@@ -60,7 +81,7 @@ export function formatStartingPrice(service: Service) {
 }
 
 export function pickPopularServices(services: Service[], maxCount = 4): Service[] {
-  const cap = Math.max(0, Math.min(4, maxCount));
+  const cap = Math.max(0, Math.min(12, maxCount));
   const active = services
     .filter((s) => s.is_active !== false)
     .slice()

@@ -35,7 +35,7 @@ export default async function FaqPage() {
     })),
   };
   return (
-    <ContentPage eyebrow="Help" title="Frequently asked questions" breadcrumb={[{ href: "/support", label: "Support" }]}
+    <ContentPage eyebrow="Help" title="Frequently asked questions"
       intro={<>Can&apos;t find your answer? <Link href="/support" className="font-semibold text-[#800020] underline">Contact support</Link>.</>}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <div className="space-y-2.5">

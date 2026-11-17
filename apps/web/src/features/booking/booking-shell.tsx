@@ -21,9 +21,6 @@ export function BookingShell({
   return (
     <div className="container booking-page pb-28 md:pb-20">
       <div className="booking-header">
-        <nav className="breadcrumbs" aria-label="Breadcrumb">
-          <Link href="/">Home</Link> / Book a service
-        </nav>
         <span className="section-kicker">NAMMA AREA, NAMMA PROS</span>
         <h1>Book in three calm steps.</h1>
         <p>Pick when works for you, confirm your address, and lock your pro’s visit.</p>

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function PrivacyPage() {
   return (
-    <ContentPage eyebrow="Policies" title="Privacy policy" updated={site.policyUpdated}
+    <ContentPage white eyebrow="Policies" title="Privacy policy" updated={site.policyUpdated}
       intro={<>This policy explains how {site.legalName} handles your personal data when you use NammaPros.</>}>
       <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
         Draft for legal review against the Digital Personal Data Protection Act, 2023. Replace bracketed details before launch.

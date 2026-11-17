@@ -11,8 +11,7 @@ export const metadata: Metadata = {
 
 export default function CancellationPolicyPage() {
   return (
-    <ContentPage eyebrow="Policies" title="Cancellation & refund policy" updated={site.policyUpdated}
-      breadcrumb={[{ href: "/support", label: "Support" }]}
+    <ContentPage white eyebrow="Policies" title="Cancellation & refund policy" updated={site.policyUpdated}
       intro="We keep this simple: change your plans for free before the cut-off, and get your money back if we can't serve you.">
       <Section title="Rescheduling">
         <p>

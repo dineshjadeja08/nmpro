@@ -281,3 +281,20 @@ class Review(UUIDStampedModel):
         if self.photo and getattr(self.photo, "name", ""):
             return f"/api/v1/catalog/reviews/{self.id}/photo/"
         return None
+
+
+class Brand(UUIDStampedModel):
+    """Brand library (LG, Samsung, ...) with a logo; services pick brands for 'Brands we service'."""
+    name = models.CharField(max_length=60, unique=True)
+    logo = models.ImageField(upload_to="brands/", blank=True, null=True)
+    logo_url = models.URLField(max_length=500, blank=True, default="")
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    @property
+    def logo_display(self):
+        if self.logo_url:
+            return self.logo_url
+        if self.logo and getattr(self.logo, "name", ""):
+            return f"/api/v1/catalog/brands/{self.id}/logo/"
+        return ""

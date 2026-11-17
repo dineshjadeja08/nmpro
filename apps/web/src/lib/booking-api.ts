@@ -195,6 +195,9 @@ export const bookingApi = {
   clearServerCart: () => bookingRequest<void>("/cart/", "DELETE"),
   bookings: (page = 1) => bookingRequest<{ count: number; results: Booking[] }>(`/bookings/?page=${page}`),
   booking: (id: string) => bookingRequest<Booking>(`/bookings/${id}/`),
+  serviceReviewsPage: (serviceIdOrSlug: string, page = 1) =>
+    bookingRequest<{ count: number; next: string | null; results: import("@nammapros/types").PublicReview[] }>(
+      `/services/${encodeURIComponent(serviceIdOrSlug)}/reviews/?page=${page}&page_size=10`),
   serviceReviews: (serviceIdOrSlug: string) => bookingRequest<ServiceReviewSummary>(`/services/${encodeURIComponent(serviceIdOrSlug)}/reviews/`),
   submitReview: (id: string, rating: number, comment: string, tags: string[] = [], photo?: File | null) => {
     if (photo && typeof FormData !== "undefined") {

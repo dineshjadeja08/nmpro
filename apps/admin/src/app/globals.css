@@ -590,6 +590,9 @@
   .min-h-\[30vh\] {
     min-height: 30vh;
   }
+  .min-h-\[40px\] {
+    min-height: 40px;
+  }
   .min-h-\[40vh\] {
     min-height: 40vh;
   }
@@ -649,6 +652,9 @@
   }
   .w-14 {
     width: calc(var(--spacing) * 14);
+  }
+  .w-36 {
+    width: calc(var(--spacing) * 36);
   }
   .w-44 {
     width: calc(var(--spacing) * 44);
@@ -912,6 +918,9 @@
   :where(.divide-slate-200 > :not(:last-child)) {
     border-color: var(--color-slate-200);
   }
+  .self-end {
+    align-self: flex-end;
+  }
   .truncate {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1072,6 +1081,9 @@
   .bg-\[\#172033\] {
     background-color: #172033;
   }
+  .bg-\[\#800020\] {
+    background-color: #800020;
+  }
   .bg-\[\#dce6ec\] {
     background-color: #dce6ec;
   }
@@ -1218,6 +1230,12 @@
   }
   .bg-slate-300 {
     background-color: var(--color-slate-300);
+  }
+  .bg-slate-500 {
+    background-color: var(--color-slate-500);
+  }
+  .bg-slate-800 {
+    background-color: var(--color-slate-800);
   }
   .bg-slate-900 {
     background-color: var(--color-slate-900);
@@ -2062,6 +2080,9 @@
     .sm\:order-none {
       order: 0;
     }
+    .sm\:col-span-1 {
+      grid-column: span 1 / span 1;
+    }
     .sm\:col-span-2 {
       grid-column: span 2 / span 2;
     }
@@ -2182,6 +2203,12 @@
   @media (width >= 64rem) {
     .lg\:col-span-2 {
       grid-column: span 2 / span 2;
+    }
+    .lg\:col-span-3 {
+      grid-column: span 3 / span 3;
+    }
+    .lg\:col-span-4 {
+      grid-column: span 4 / span 4;
     }
     .lg\:-mx-8 {
       margin-inline: calc(var(--spacing) * -8);

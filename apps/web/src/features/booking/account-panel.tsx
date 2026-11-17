@@ -508,7 +508,6 @@ export function AccountPanel() {
     <main className="min-h-[75vh] bg-[#FBF8F5] pb-14">
       <CustomerHubHeader
         activeTab="account"
-        crumb="Your Account"
         badge="Customer Portal"
         title={phone ? "Account & Saved Addresses" : "Your NammaPros Account"}
         subtitle={

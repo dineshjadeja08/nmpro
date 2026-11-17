@@ -31,6 +31,7 @@ import {
   Zap,
 } from "lucide-react";
 import { api, base, uploadCategoryImage, uploadImage } from "../lib/api";
+import { ServiceBrandsEditor } from "./service-brands-editor";
 import { AdminErrorState } from "./admin/admin-error-state";
 
 export type AdminCategory = {
@@ -95,6 +96,9 @@ export type AdminService = {
   landing_thumbnail?: string;
   cover_image_url?: string;
   landing_thumbnail_url?: string;
+  list_image?: string;
+  popup_cover_image?: string;
+  brands?: { name: string; logo_url?: string }[];
   sort_order: number;
   is_active: boolean;
   created_at?: string;
@@ -1317,6 +1321,46 @@ export function AdminServicesScreen({
 
                     <div className="border-t border-[#efede8] pt-4">
                       <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Row image (next to the Add button) · 600 × 600 px
+                      </p>
+                      <ImageUploadSlotBox
+                        title="Row image"
+                        recommendedSize="600 × 600 px"
+                        imageUrl={selectedService.list_image}
+                        disabled={!canEdit}
+                        uploading={uploadingSlot === "svc_list_image"}
+                        onUpload={(f) => void handleServiceImageUpload(selectedService.id, f, "list_image")}
+                        onClear={() => void handleServiceImageClear(selectedService.id, "list_image")}
+                      />
+                    </div>
+
+                    <div className="border-t border-[#efede8] pt-4">
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        Pop-up banner (top of the service pop-up) · 1600 × 700 px
+                      </p>
+                      <ImageUploadSlotBox
+                        title="Pop-up banner"
+                        recommendedSize="1600 × 700 px"
+                        imageUrl={selectedService.popup_cover_image}
+                        disabled={!canEdit}
+                        uploading={uploadingSlot === "svc_popup_cover_image"}
+                        aspectClass="aspect-[16/7]"
+                        onUpload={(f) => void handleServiceImageUpload(selectedService.id, f, "popup_cover_image")}
+                        onClear={() => void handleServiceImageClear(selectedService.id, "popup_cover_image")}
+                      />
+                    </div>
+
+                    <div className="border-t border-[#efede8] pt-4">
+                      <ServiceBrandsEditor
+                        serviceId={selectedService.id}
+                        brands={selectedService.brands ?? []}
+                        canEdit={canEdit}
+                        onSaved={loadAll}
+                      />
+                    </div>
+
+                    <div className="border-t border-[#efede8] pt-4">
+                      <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                         Sub-service banner (1920 × 600 px)
                       </p>
                       <ImageUploadSlotBox
@@ -1840,16 +1884,20 @@ export function AdminServicesScreen({
             />
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-700">Banner title</label>
+              <p className="mb-1 text-[11px] text-slate-500">Big headline on the category page banner, e.g. &quot;AC at your doorstep&quot;.</p>
               <input
                 value={bannerForm.banner_title}
+                placeholder="AC at your doorstep"
                 onChange={(e) => setBannerForm({ ...bannerForm, banner_title: e.target.value })}
                 className="h-10 w-full rounded-xl border border-slate-200 px-3 text-sm"
               />
             </div>
             <div>
               <label className="mb-1 block text-xs font-bold text-slate-700">Banner subtitle</label>
+              <p className="mb-1 text-[11px] text-slate-500">Line under the headline. Write {"{price}"} for the live lowest price, e.g. &quot;Starts at {"{price}"}&quot;. Leave empty to show it automatically.</p>
               <textarea
                 rows={2}
+                placeholder="Starts at {price}"
                 value={bannerForm.banner_subtitle}
                 onChange={(e) => setBannerForm({ ...bannerForm, banner_subtitle: e.target.value })}
                 className="w-full rounded-xl border border-slate-200 p-3 text-sm"

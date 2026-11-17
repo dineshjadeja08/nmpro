@@ -676,8 +676,8 @@ class ServiceBrandInput(serializers.Serializer):
 
     def validate_logo_url(self, value):
         value = (value or "").strip()
-        if value and not value.startswith("https://"):
-            raise serializers.ValidationError("Brand logo must be an https:// URL.")
+        if value and not (value.startswith("https://") or value.startswith("/api/v1/catalog/brands/")):
+            raise serializers.ValidationError("Brand logo must be an https:// URL or an uploaded brand logo.")
         return value
 
 

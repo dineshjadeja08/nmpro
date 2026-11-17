@@ -1,4 +1,3 @@
-import Link from "next/link";
 import React from "react";
 
 /** Simple, readable layout for policy, help and blog pages. */
@@ -7,34 +6,20 @@ export function ContentPage({
   title,
   intro,
   updated,
-  breadcrumb,
+  white = false,
   children,
 }: {
   eyebrow?: string;
   title: string;
   intro?: React.ReactNode;
   updated?: string;
-  breadcrumb?: { href: string; label: string }[];
+  /** Plain white page background (used by the policy pages). */
+  white?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <main className="bg-[#FBF8F5]">
+    <main className={white ? "bg-white" : "bg-[#FBF8F5]"}>
       <div className="container max-w-3xl py-10 sm:py-14">
-        <nav aria-label="Breadcrumb" className="mb-5 text-xs text-[#57534E]">
-          <ol className="flex flex-wrap items-center gap-1.5">
-            <li><Link href="/" className="underline underline-offset-2 hover:text-[#800020]">Home</Link></li>
-            {(breadcrumb ?? []).map((b) => (
-              <li key={b.href} className="flex items-center gap-1.5">
-                <span aria-hidden="true">/</span>
-                <Link href={b.href} className="underline underline-offset-2 hover:text-[#800020]">{b.label}</Link>
-              </li>
-            ))}
-            <li className="flex items-center gap-1.5" aria-current="page">
-              <span aria-hidden="true">/</span>
-              <span className="font-semibold text-[#1C1917]">{title}</span>
-            </li>
-          </ol>
-        </nav>
         {eyebrow && <p className="text-xs font-bold uppercase tracking-wider text-[#800020]">{eyebrow}</p>}
         <h1 className="mt-2 font-serif text-3xl font-semibold leading-tight text-[#1C1917] sm:text-4xl">{title}</h1>
         {intro && <div className="mt-3 text-base leading-relaxed text-[#57534E]">{intro}</div>}

@@ -1,4 +1,4 @@
-import { CalendarCheck, ChevronRight, CreditCard, User } from "lucide-react";
+import { CalendarCheck, CreditCard, User } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
@@ -20,14 +20,12 @@ const HUB_TABS: ReadonlyArray<{
  */
 export function CustomerHubHeader({
   activeTab,
-  crumb,
   badge,
   title,
   subtitle,
   actions,
 }: {
   activeTab: HubTabKey;
-  crumb: string;
   badge: string;
   title: string;
   subtitle: string;
@@ -36,13 +34,6 @@ export function CustomerHubHeader({
   return (
     <header className="border-b border-[#EAE3DC] bg-gradient-to-b from-[#FBECEF] via-[#FDF4F6] to-[#FBF8F5] pt-6">
       <div className="container max-w-5xl">
-        <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-1.5 text-[11px] font-medium text-[#78716C]">
-          <Link href="/" className="hover:text-[#800020]">
-            Home
-          </Link>
-          <ChevronRight size={12} />
-          <span className="font-semibold text-[#1C1917]">{crumb}</span>
-        </nav>
 
         <div className="flex flex-wrap items-end justify-between gap-4 pb-6">
           <div className="space-y-1.5">

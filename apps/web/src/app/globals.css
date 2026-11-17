@@ -29,6 +29,10 @@
 @layer base {
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
+  /* Laptops and desktops: render at the 90% density the design was approved at. Phones keep full size. */
+  @media (min-width: 1024px) {
+    html { zoom: 0.9; }
+  }
   body {
     margin: 0;
     background: var(--canvas);

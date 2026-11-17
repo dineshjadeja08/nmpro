@@ -200,7 +200,6 @@ export function BookingHistory() {
     <main className="min-h-[75vh] bg-[#FBF8F5] pb-14">
       <CustomerHubHeader
         activeTab="bookings"
-        crumb="My Bookings"
         badge="Visit History & Live Tracker"
         title="My Bookings"
         subtitle="Check scheduled visit slots, technician assignments, digital quotes, and 30-day warranty status."

@@ -16,28 +16,27 @@ export function Footer() {
 
         <nav aria-label="Popular services" className="flex flex-col gap-2 text-xs">
           <b className="mb-1 text-white">Services</b>
-          <Link href="/services/ac" className="hover:text-white">AC Service in Chennai</Link>
-          <Link href="/services/water-tank-cleaning" className="hover:text-white">Water Tank Cleaning</Link>
-          <Link href="/services/washing-machine" className="hover:text-white">Washing Machine Repair</Link>
-          <Link href="/services" className="hover:text-white">All services</Link>
+          <Link href="/ac-service-chennai" className="text-white hover:underline underline-offset-2">AC Service in Chennai</Link>
+          <Link href="/services?city=chennai&category=water-tank-cleaning" className="text-white hover:underline underline-offset-2">Water Tank Cleaning</Link>
+          <Link href="/services?city=chennai&category=washing-machine" className="text-white hover:underline underline-offset-2">Washing Machine Repair</Link>
+          <Link href="/#categories" className="text-white hover:underline underline-offset-2">All categories</Link>
         </nav>
 
         <div className="flex flex-col gap-2 text-xs">
           <b className="mb-1 text-white">Company</b>
-          <Link href="/about" className="hover:text-white">About us</Link>
-          <Link href="/#how-it-works" className="hover:text-white">How it works</Link>
-          <Link href="/blog" className="hover:text-white">Home care guides</Link>
-          <Link href="/join-as-technician" className="hover:text-white">Join as a pro</Link>
+          <Link href="/about" className="text-white hover:underline underline-offset-2">About us</Link>
+          <Link href="/blog" className="text-white hover:underline underline-offset-2">Home care guides</Link>
+          <Link href="/join-as-technician" className="text-white hover:underline underline-offset-2">Join as a pro</Link>
         </div>
 
         <div className="flex flex-col gap-2 text-xs">
           <b className="mb-1 text-white">Help</b>
-          <Link href="/support" className="hover:text-white">Help &amp; support</Link>
-          <Link href="/faq" className="hover:text-white">FAQs</Link>
-          <Link href="/bookings" className="hover:text-white">My bookings</Link>
-          <Link href="/cancellation-policy" className="hover:text-white">Cancellation &amp; refunds</Link>
-          <Link href="/terms" className="hover:text-white">Terms of service</Link>
-          <Link href="/privacy-policy" className="hover:text-white">Privacy policy</Link>
+          <Link href="/support" className="text-white hover:underline underline-offset-2">Help &amp; support</Link>
+          <Link href="/faq" className="text-white hover:underline underline-offset-2">FAQs</Link>
+          <Link href="/bookings" className="text-white hover:underline underline-offset-2">My bookings</Link>
+          <Link href="/cancellation-policy" className="text-white hover:underline underline-offset-2">Cancellation &amp; refunds</Link>
+          <Link href="/terms" className="text-white hover:underline underline-offset-2">Terms of service</Link>
+          <Link href="/privacy-policy" className="text-white hover:underline underline-offset-2">Privacy policy</Link>
         </div>
       </div>
 

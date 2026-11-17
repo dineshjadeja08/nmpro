@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function TermsPage() {
   return (
-    <ContentPage eyebrow="Policies" title="Terms of service" updated={site.policyUpdated}
+    <ContentPage white eyebrow="Policies" title="Terms of service" updated={site.policyUpdated}
       intro={<>These terms apply when you use the NammaPros website or apps to book a service. The platform is operated by {site.legalName}, {site.legalAddress}.</>}>
       <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
         Draft for legal review. Replace bracketed details and confirm the terms with your legal adviser before launch.

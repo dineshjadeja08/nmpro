@@ -35,10 +35,10 @@ import { serviceHeroImage } from "@/lib/service-images";
 
 const STEPS = ["1. Slot", "2. Address", "3. Confirm"] as const;
 
-type CheckoutResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
-type RazorpayWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => { open: () => void } };
+export type CheckoutResult = { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string };
+export type RazorpayWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => { open: () => void } };
 
-function loadRazorpayCheckout() {
+export function loadRazorpayCheckout() {
   return new Promise<void>((resolve, reject) => {
     if ((window as RazorpayWindow).Razorpay) return resolve();
     const script = document.createElement("script");
@@ -50,7 +50,7 @@ function loadRazorpayCheckout() {
   });
 }
 
-const EMPTY_ADDRESS: Omit<Address, "id" | "line_1"> = {
+export const EMPTY_ADDRESS: Omit<Address, "id" | "line_1"> = {
   label: "Home",
   contact_name: "",
   contact_phone: "",
@@ -66,7 +66,7 @@ const EMPTY_ADDRESS: Omit<Address, "id" | "line_1"> = {
   is_default: false,
 };
 
-function formatRupees(paise: number) {
+export function formatRupees(paise: number) {
   const rupees = paise / 100;
   const hasDecimals = rupees % 1 !== 0;
   return `₹${rupees.toLocaleString("en-IN", {
@@ -75,7 +75,7 @@ function formatRupees(paise: number) {
   })}`;
 }
 
-function getIstDayKey(iso: string) {
+export function getIstDayKey(iso: string) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
@@ -96,7 +96,7 @@ function formatDayChipLabel(dayKey: string) {
   }).format(new Date(`${dayKey}T06:00:00+05:30`));
 }
 
-function formatSlotTime(iso: string) {
+export function formatSlotTime(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     hour: "numeric",
@@ -105,7 +105,7 @@ function formatSlotTime(iso: string) {
   }).format(new Date(iso));
 }
 
-function formatFullSlot(iso: string) {
+export function formatFullSlot(iso: string) {
   return new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     weekday: "short",
@@ -117,7 +117,7 @@ function formatFullSlot(iso: string) {
   }).format(new Date(iso));
 }
 
-function getIstHour(iso: string) {
+export function getIstHour(iso: string) {
   const h = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Kolkata",
     hour: "2-digit",

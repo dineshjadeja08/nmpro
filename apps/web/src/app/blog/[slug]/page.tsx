@@ -46,7 +46,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     mainEntityOfPage: `${site.url}/blog/${post.slug}`,
   };
   return (
-    <ContentPage title={post.title} breadcrumb={[{ href: "/blog", label: "Guides" }]}
+    <ContentPage title={post.title}
       intro={post.excerpt || undefined}
       updated={formatPostDate(post.published_at) || undefined}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />

@@ -30,6 +30,19 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // One services page: /services?city=..&category=..&service=.. Older path-style links redirect to it.
+  async redirects() {
+    return [
+      { source: "/services/:category/:service", destination: "/services?category=:category&service=:service", permanent: true },
+      { source: "/services/:category", destination: "/services?category=:category", permanent: true },
+      // Search is a pop-up now; the old search page goes home.
+      { source: "/search", destination: "/", permanent: true },
+      // The cart and booking happen on /checkout; old /book links (with ?service=) carry over.
+      { source: "/book", destination: "/checkout", permanent: false },
+      // No category: the full list isn't shown; send visitors to the home page categories.
+      { source: "/services", missing: [{ type: "query", key: "category" }], destination: "/#categories", permanent: false },
+    ];
+  },
   async headers() {
     return [{
       source: "/(.*)",

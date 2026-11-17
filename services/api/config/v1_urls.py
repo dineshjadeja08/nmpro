@@ -71,6 +71,7 @@ from domains.technicians.field import (
 from domains.notifications.views import WebPushConfigView, WebPushSubscribeView
 from domains.operations.complaints import BookingComplaintsView
 from domains.payments.receipts import CustomerReceiptView, TechnicianReceiptView
+from domains.catalog.brands import AdminBrandDetailView, AdminBrandsView, BrandLogoView
 from domains.catalog.views_landing import LandingDetailView, LandingListView
 from domains.promotions.views import (
     AdminCouponDetailView,
@@ -418,6 +419,9 @@ urlpatterns = [
     path("cart/checkout/", CartCheckoutView.as_view()),
     path("cart/merge/", CartMergeView.as_view()),
     path("offers/", PublicOffersView.as_view()),
+    path("admin/brands/", AdminBrandsView.as_view()),
+    path("admin/brands/<uuid:brand_id>/", AdminBrandDetailView.as_view()),
+    path("catalog/brands/<uuid:brand_id>/logo/", BrandLogoView.as_view()),
     path("landing-pages/", LandingListView.as_view()),
     path("landing-pages/<str:slug>/", LandingDetailView.as_view()),
     path("bookings/<uuid:booking_id>/technician-location/", CustomerTechnicianLocationView.as_view()),

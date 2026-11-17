@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { BadgeCheck, CalendarClock, IndianRupee, MapPin } from "lucide-react";
 import { ApiError } from "@nammapros/api-client";
@@ -70,15 +69,6 @@ export default async function CityLandingPage({ params }: { params: Promise<{ la
 
       <section className="border-b border-[#EAE3DC] bg-white">
         <div className="container py-10 sm:py-14">
-          <nav aria-label="Breadcrumb" className="mb-4 text-xs text-[#57534E]">
-            <ol className="flex flex-wrap gap-1.5">
-              <li><Link href="/" className="underline underline-offset-2 hover:text-[#800020]">Home</Link> <span aria-hidden="true">/</span></li>
-              {page.category && (
-                <li><Link href={`/services/${page.category.slug}`} className="underline underline-offset-2 hover:text-[#800020]">{page.category.name}</Link> <span aria-hidden="true">/</span></li>
-              )}
-              <li aria-current="page" className="font-semibold text-[#1C1917]">{city || page.heading}</li>
-            </ol>
-          </nav>
           <h1 className="max-w-3xl font-serif text-3xl font-semibold leading-tight text-[#1C1917] sm:text-5xl">{page.heading}</h1>
           {page.summary && <p className="mt-3 max-w-2xl text-base text-[#57534E] sm:text-lg">{page.summary}</p>}
           <ul className="mt-6 flex flex-wrap gap-2 text-xs font-semibold text-[#1C1917]">
