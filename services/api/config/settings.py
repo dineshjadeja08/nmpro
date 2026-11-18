@@ -41,8 +41,12 @@ if ENVIRONMENT == "development" and not _RUNNING_PYTEST:
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 DEBUG = ENVIRONMENT == "development" and os.getenv("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver").split(",") if host.strip()]
-CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003").split(",") if origin.strip()]
+CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:8081").split(",") if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
+# The NMPRO Partner app identifies itself with this header (see common/csrf.py); only allowed origins may send it.
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, "x-nmpro-client")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv(
     "DJANGO_CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS)).split(",") if origin.strip()]
 

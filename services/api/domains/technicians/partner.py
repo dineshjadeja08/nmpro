@@ -11,7 +11,7 @@ from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_protect
+from common.csrf import csrf_protect_unless_app
 from rest_framework import serializers
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -131,7 +131,14 @@ def joining_fee_data(fee):
             "online_available": bool(settings.RAZORPAY_ENABLED and settings.RAZORPAY_KEY_ID)}
 
 
-@method_decorator(csrf_protect, name="dispatch")
+def _app_tokens(user):
+    """Access and refresh tokens for the NMPRO Partner mobile app (the website uses the session cookie)."""
+    from common.jwt import issue_token_pair
+
+    return issue_token_pair(user)
+
+
+@method_decorator(csrf_protect_unless_app, name="dispatch")
 class JoinRequestView(APIView):
     """'Request to join as a pro' from the partner app, without signing in. Staff review KYC in admin."""
     authentication_classes = []
@@ -186,7 +193,7 @@ class JoinRequestView(APIView):
                     fee = ensure_joining_fee(existing)
                     login(request._request, user, backend="django.contrib.auth.backends.ModelBackend")
                     return Response({"status": existing.verification_status, "already_applied": True,
-                                     "joining_fee": joining_fee_data(fee),
+                                     "joining_fee": joining_fee_data(fee), **_app_tokens(user),
                                      "message": "You have already applied with this number."}, status=200)
                 profile = TechnicianProfile.objects.create(
                     user=user, display_name=values["name"].strip(), city=values["city"].strip(),
@@ -208,7 +215,7 @@ class JoinRequestView(APIView):
         # Signed in so the applicant can pay the joining fee straight away. Jobs stay locked until approval.
         login(request._request, user, backend="django.contrib.auth.backends.ModelBackend")
         return Response({"status": profile.verification_status, "already_applied": False,
-                         "joining_fee": joining_fee_data(fee),
+                         "joining_fee": joining_fee_data(fee), **_app_tokens(user),
                          "message": "Request received. Pay the joining fee to complete your application."},
                         status=201)
 

@@ -11,6 +11,8 @@ from django.middleware.csrf import get_token
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+
+from common.csrf import csrf_protect_unless_app
 from rest_framework import serializers
 from rest_framework.exceptions import APIException, AuthenticationFailed, PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -126,7 +128,7 @@ def require_partner_app_access(phone):
         raise PermissionDenied("Your account is approved but app access is not switched on yet. Please contact NammaPros.")
 
 
-@method_decorator(csrf_protect, name="dispatch")
+@method_decorator(csrf_protect_unless_app, name="dispatch")
 class OTPRequestView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -140,7 +142,7 @@ class OTPRequestView(APIView):
         return Response(issue_otp(phone))
 
 
-@method_decorator(csrf_protect, name="dispatch")
+@method_decorator(csrf_protect_unless_app, name="dispatch")
 class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []

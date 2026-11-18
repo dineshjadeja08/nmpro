@@ -322,3 +322,22 @@ def test_join_without_all_documents_waits_for_documents(setup):
                     aadhaar_front=SimpleUploadedFile("f.jpg", JPEG, content_type="image/jpeg"))
     assert response.status_code == 201, response.content
     assert response.json()["status"] == "PENDING_DOCUMENTS"
+
+
+def test_mobile_app_can_join_without_csrf_cookie_and_gets_tokens(setup):
+    """The NMPRO Partner app has no cookies: it identifies itself with a header and gets bearer tokens."""
+    browser = APIClient(enforce_csrf_checks=True)
+    challenge = browser.post("/api/v1/technicians/join-otp/", {"phone": "9840011277"}, format="json").json()
+    body = {"name": "App User", "phone": "9840011277", "city": "Chennai", "skills": "AC", "consent": "true",
+            "challenge_id": challenge["challenge_id"], "code": challenge["development_code"],
+            "id_document": SimpleUploadedFile("id.jpg", JPEG, content_type="image/jpeg")}
+    assert browser.post("/api/v1/technicians/join-requests/", body, format="multipart").status_code == 403
+
+    app = APIClient(enforce_csrf_checks=True)
+    body["id_document"] = SimpleUploadedFile("id.jpg", JPEG, content_type="image/jpeg")
+    response = app.post("/api/v1/technicians/join-requests/", body, format="multipart",
+                        HTTP_X_NMPRO_CLIENT="partner-app")
+    assert response.status_code == 201, response.content
+    access = response.json()["access"]
+    fee = APIClient().get("/api/v1/technicians/joining-fee/", HTTP_AUTHORIZATION=f"Bearer {access}")
+    assert fee.status_code == 200
