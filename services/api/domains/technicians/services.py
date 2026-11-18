@@ -10,6 +10,7 @@ from domains.bookings.models import Booking
 from domains.notifications.models import Notification, NotificationPreference
 
 from .models import (
+    IDENTITY_KINDS,
     JobAssignment,
     JobCompletion,
     JobInspection,
@@ -93,7 +94,7 @@ def submit_application(user):
     profile = TechnicianProfile.objects.select_for_update().get(id=profile.id)
     if profile.verification_status not in ("PENDING_DOCUMENTS", "REJECTED"):
         raise JobConflict("Application cannot be submitted in its current state.")
-    if not profile.skills.exists() or not profile.documents.filter(kind="IDENTITY").exists():
+    if not profile.skills.exists() or not profile.documents.filter(kind__in=IDENTITY_KINDS).exists():
         raise ValidationError("Add a skill and identity document before submitting.")
     old = profile.verification_status
     profile.verification_status = "UNDER_REVIEW"
@@ -117,7 +118,7 @@ def review_application(actor, profile_id, target, note=""):
             raise JobConflict("Only verified technicians can be suspended.")
     elif profile.verification_status != "UNDER_REVIEW" or target not in ("VERIFIED", "REJECTED"):
         raise JobConflict("Application is not awaiting review.")
-    if target == "VERIFIED" and (not profile.documents.filter(kind="IDENTITY", status="APPROVED").exists()
+    if target == "VERIFIED" and (not profile.documents.filter(kind__in=IDENTITY_KINDS, status="APPROVED").exists()
                                  or not profile.skills.filter(is_verified=True).exists()
                                  or not profile.zones.exists()):
         raise JobConflict("Identity, skill and service zone must be approved first.")

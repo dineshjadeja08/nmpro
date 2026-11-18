@@ -7,7 +7,8 @@ import { api, ApiError, type Profile } from "../lib/api";
 import { I18nProvider, useI18n, type TextKey } from "../lib/i18n";
 import { JobFlow } from "./job-flow";
 import { JobsList } from "./jobs";
-import { JoinRequest, KycPage, Login, Welcome } from "./onboarding";
+import { JobAlert } from "./job-alert";
+import { JoinRequest, KycPage, Login, OnboardingSteps, UnderReview, Welcome } from "./onboarding";
 import { EarningsPage, InvoicesPage } from "./pages";
 import { FeePage } from "./fee";
 import { Icon } from "./ui";
@@ -54,6 +55,8 @@ function PortalInner() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [blocked, setBlocked] = useState("");
   const [feeDue, setFeeDue] = useState(false);
+  const [firstJoin, setFirstJoin] = useState(false);
+  const [inReview, setInReview] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -84,9 +87,11 @@ function PortalInner() {
         if (!active) return;
         if (e instanceof ApiError && e.status === 403) {
           // Signed in but jobs are locked: unpaid joining fee first, otherwise waiting for approval.
-          const fee = await api.joiningFee().catch(() => null);
+          const [fee, me] = await Promise.all([api.joiningFee().catch(() => null), api.me().catch(() => null)]);
           if (!active) return;
           setFeeDue(Boolean(fee && !fee.settled) || path === "/fee");
+          setFirstJoin(Boolean(fee && !fee.paid_at));
+          setInReview(Boolean(me && ["UNDER_REVIEW", "PENDING_DOCUMENTS"].includes(me.verification_status)));
           setBlocked(e.message);
         } else router.replace("/welcome");
       } finally {
@@ -107,7 +112,15 @@ function PortalInner() {
     router.replace("/welcome");
   };
 
-  if (feeDue) return <PublicShell><FeePage onSignOut={signOut} /></PublicShell>;
+  if (feeDue) {
+    return (
+      <PublicShell>
+        {firstJoin && <div className="onb-steps-bar"><OnboardingSteps step={3} /></div>}
+        <FeePage onSignOut={signOut} />
+      </PublicShell>
+    );
+  }
+  if (blocked && inReview) return <PublicShell><UnderReview note={blocked} onSignOut={signOut} /></PublicShell>;
   if (blocked || !profile) {
     return (
       <PublicShell>
@@ -141,6 +154,7 @@ function PortalInner() {
         </div>
       </header>
       <main className="main" id="main">{screen}</main>
+      <JobAlert />
       <nav className="tabbar" aria-label="Main">
         {TABS.map((tab) => {
           const current = path === tab.href || (tab.href === "/jobs" && path.startsWith("/jobs/"));

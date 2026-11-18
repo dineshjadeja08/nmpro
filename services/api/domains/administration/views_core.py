@@ -606,7 +606,7 @@ class AdminTechnicianDocumentsView(APIView):
     def post(self, request, technician_id):
         require(request.user, "MANAGE_TECHNICIANS")
         p = get_object_or_404(TechnicianProfile, id=technician_id)
-        kind = serializers.ChoiceField(choices=["IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO"]).run_validation(
+        kind = serializers.ChoiceField(choices=["IDENTITY", "AADHAAR_FRONT", "AADHAAR_BACK", "PAN", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO"]).run_validation(
             request.data.get("kind") or request.data.get("document_type") or "IDENTITY"
         )
         upload = request.FILES.get("file") or request.FILES.get("image")

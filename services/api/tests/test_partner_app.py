@@ -302,3 +302,23 @@ def test_kyc_files_purged_after_retention(setup, settings):
     assert purge_expired_kyc_documents() == 1
     doc.refresh_from_db()
     assert doc.status == "PURGED" and not doc.file
+
+
+def test_join_with_aadhaar_pan_and_photo_goes_to_review(setup):
+    client = APIClient()
+    files = {name: SimpleUploadedFile(f"{name}.jpg", JPEG, content_type="image/jpeg")
+             for name in ("aadhaar_front", "aadhaar_back", "pan", "photo")}
+    response = join(client, setup, phone="9840011299", id_document="", **files)
+    assert response.status_code == 201, response.content
+    assert response.json()["status"] == "UNDER_REVIEW"
+    profile = TechnicianProfile.objects.get(user__phone_e164="+919840011299")
+    assert sorted(profile.documents.values_list("kind", flat=True)) == ["AADHAAR_BACK", "AADHAAR_FRONT", "PAN",
+                                                                       "PROFILE_PHOTO"]
+
+
+def test_join_without_all_documents_waits_for_documents(setup):
+    client = APIClient()
+    response = join(client, setup, phone="9840011298", id_document="",
+                    aadhaar_front=SimpleUploadedFile("f.jpg", JPEG, content_type="image/jpeg"))
+    assert response.status_code == 201, response.content
+    assert response.json()["status"] == "PENDING_DOCUMENTS"

@@ -1,6 +1,6 @@
 /* NammaPros Partner service worker: background job-offer alerts and a small offline shell. */
-const CACHE = "np-partner-v1";
-const SHELL = ["/jobs", "/icon.svg", "/manifest.webmanifest"];
+const CACHE = "np-partner-v2";
+const SHELL = ["/jobs", "/icon.svg", "/manifest.webmanifest", "/sounds/job-alert.wav"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => undefined));
@@ -29,7 +29,10 @@ self.addEventListener("push", (event) => {
     data = { title: "NammaPros", body: event.data ? event.data.text() : "" };
   }
   const title = data.title || "New job offer";
-  event.waitUntil(
+  // An open partner page rings with the NammaPros ringtone; the notification below covers a closed one.
+  const tellPages = self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then((wins) => wins.forEach((w) => w.postMessage({ type: data.type || "JOB_OFFER", offer_id: data.offer_id })));
+  event.waitUntil(Promise.all([tellPages,
     self.registration.showNotification(title, {
       body: data.body || "Open the app to accept.",
       tag: data.offer_id ? `offer-${data.offer_id}` : "job-offer",
@@ -39,8 +42,8 @@ self.addEventListener("push", (event) => {
       icon: "/icon.svg",
       badge: "/icon.svg",
       data: { url: data.url || "/jobs" },
-    })
-  );
+    }),
+  ]));
 });
 
 self.addEventListener("notificationclick", (event) => {

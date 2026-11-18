@@ -288,7 +288,9 @@ class TechnicianDocumentView(APIView):
     def post(self, request):
         profile = profile_for(request.user)
         kind = request.data.get("kind")
-        if kind not in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT"):
+        from .models import DOCUMENT_KINDS
+
+        if kind not in DOCUMENT_KINDS:
             raise serializers.ValidationError("Choose a document kind.")
         upload = request.FILES.get("file")
         if not upload or upload.size > 5 * 1024 * 1024 or upload.size < 1:
@@ -332,6 +334,9 @@ class TechnicianOffersView(APIView):
 
     def get(self, request):
         profile = profile_for(request.user)
+        from .broadcast import sweep
+
+        sweep()  # sends any waves that are due (there is no background worker on every host)
         offers = JobOffer.objects.filter(technician=profile).select_related(
             "booking__service", "booking__package", "booking__slot__zone").order_by("-created_at")[:50]
         return Response({"offers": [offer_data(o) for o in offers]})

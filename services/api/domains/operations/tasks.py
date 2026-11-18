@@ -45,8 +45,8 @@ def remind_lead_follow_ups():
 
 @shared_task
 def process_automatic_dispatch():
-    if not settings.AUTOMATIC_DISPATCH_ENABLED:
-        return 0
+    if not settings.AUTOMATIC_DISPATCH_ENABLED or settings.JOB_BROADCAST_ENABLED:
+        return 0  # broadcast (domains.technicians.broadcast) offers jobs to everyone eligible instead
     rule = DispatchRule.objects.filter(is_active=True, automatic_enabled=True).select_related("updated_by").first()
     if not rule or not rule.updated_by_id:
         return 0

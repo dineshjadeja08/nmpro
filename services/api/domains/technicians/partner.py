@@ -161,8 +161,14 @@ class JoinRequestView(APIView):
             raise serializers.ValidationError({"skills": "Choose at least one service you can do."})
         zone_ids = [str(z.id) for z in Zone.objects.filter(id__in=values["zone_ids"], is_active=True)]
         id_doc, photo = request.FILES.get("id_document"), request.FILES.get("photo")
+        # Onboarding sends Aadhaar front and back and PAN separately; older forms send one "id_document".
+        kyc = {kind: request.FILES.get(field) for field, kind in
+               (("aadhaar_front", "AADHAAR_FRONT"), ("aadhaar_back", "AADHAAR_BACK"), ("pan", "PAN"))}
+        kyc = {kind: f for kind, f in kyc.items() if f}
         id_type = _sniff(id_doc) if id_doc else None
         photo_type = _sniff(photo, allow_pdf=False) if photo else None
+        kyc_types = {kind: _sniff(f) for kind, f in kyc.items()}
+        complete = bool(id_doc) or (len(kyc) == 3 and photo is not None)
 
         from domains.users.views import consume_otp
 
@@ -185,11 +191,13 @@ class JoinRequestView(APIView):
                 profile = TechnicianProfile.objects.create(
                     user=user, display_name=values["name"].strip(), city=values["city"].strip(),
                     experience_years=values["experience_years"], bio=values["about"], requested_zone_ids=zone_ids,
-                    verification_status="UNDER_REVIEW" if id_doc else "PENDING_DOCUMENTS", is_active=False,
-                    submitted_at=timezone.now() if id_doc else None)
+                    verification_status="UNDER_REVIEW" if complete else "PENDING_DOCUMENTS", is_active=False,
+                    submitted_at=timezone.now() if complete else None)
                 TechnicianSkill.objects.bulk_create([TechnicianSkill(technician=profile, code=c) for c in skills])
                 if id_doc:
                     TechnicianDocument.objects.create(technician=profile, kind="IDENTITY", file=id_doc, content_type=id_type)
+                for kind, f in kyc.items():
+                    TechnicianDocument.objects.create(technician=profile, kind=kind, file=f, content_type=kyc_types[kind])
                 if photo:
                     TechnicianDocument.objects.create(technician=profile, kind="PROFILE_PHOTO", file=photo, content_type=photo_type)
                 AuditLog.objects.create(actor=None, action="TECHNICIAN_JOIN_REQUESTED", resource_type="TechnicianProfile",

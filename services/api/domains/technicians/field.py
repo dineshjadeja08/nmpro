@@ -195,3 +195,10 @@ class TechnicianCollectView(APIView):
                                        payload={"booking_id": str(booking.id), "type": "VISIT",
                                                 "method": values["method"]})
         return Response({"collected_paise": due["total_due_paise"], "payment_status": booking.payment_status})
+
+
+@receiver(post_save, sender="bookings.Booking", dispatch_uid="broadcast_confirmed_booking")
+def broadcast_confirmed_booking(sender, instance, **kwargs):
+    from .broadcast import on_booking_saved
+
+    on_booking_saved(instance)

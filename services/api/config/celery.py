@@ -20,6 +20,7 @@ app.conf.beat_schedule = {
     "expire-job-offers": {"task": "domains.technicians.tasks.expire_job_offers", "schedule": 60.0},
     "expire-job-quotations": {"task": "domains.technicians.tasks.expire_job_quotations", "schedule": 300.0},
     "reconcile-technician-earnings": {"task": "domains.technicians.tasks.reconcile_technician_earnings", "schedule": 300.0},
+    "job-broadcast-sweep": {"task": "domains.technicians.tasks.job_broadcast_sweep", "schedule": 30.0},
     "automatic-dispatch": {"task": "domains.operations.tasks.process_automatic_dispatch", "schedule": 60.0},
     "evaluate-operations-sla": {"task": "domains.operations.tasks.evaluate_sla", "schedule": 60.0},
     "remind-lead-follow-ups": {"task": "domains.operations.tasks.remind_lead_follow_ups", "schedule": 60.0},

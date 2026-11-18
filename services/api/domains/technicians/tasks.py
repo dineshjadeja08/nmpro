@@ -60,3 +60,10 @@ def reconcile_technician_earnings():
             if accrue_earning(assignment):
                 created += 1
     return created
+
+
+@shared_task
+def job_broadcast_sweep():
+    from .broadcast import sweep
+
+    return sweep()

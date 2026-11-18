@@ -103,11 +103,16 @@ class TechnicianCompanyMember(UUIDStampedModel):
         constraints = [models.UniqueConstraint(fields=["technician", "user"], name="unique_technician_company_member")]
 
 
+# Documents that prove who the technician is (Aadhaar front and back, PAN, or another ID).
+IDENTITY_KINDS = ("IDENTITY", "AADHAAR_FRONT", "AADHAAR_BACK", "PAN")
+DOCUMENT_KINDS = (*IDENTITY_KINDS, "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT")
+
+
 class TechnicianDocument(UUIDStampedModel):
     technician = models.ForeignKey(TechnicianProfile, on_delete=models.PROTECT, related_name="documents")
     assignment = models.ForeignKey("technicians.JobAssignment", on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="photos")
-    kind = models.CharField(max_length=24, choices=[(s, s) for s in ("IDENTITY", "ADDRESS", "CERTIFICATION", "PROFILE_PHOTO", "BEFORE", "AFTER", "RECEIPT")])
+    kind = models.CharField(max_length=24, choices=[(s, s) for s in DOCUMENT_KINDS])
     file = models.FileField(upload_to="private/technicians/%Y/%m/", null=True, blank=True)  # emptied when purged
     content_type = models.CharField(max_length=50)
     status = models.CharField(max_length=20, default="PENDING")

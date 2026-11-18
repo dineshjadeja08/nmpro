@@ -179,6 +179,10 @@ if PILOT_ENABLED:
         PILOT_ZONE_IDS = [str(UUID(zone_id)) for zone_id in PILOT_ZONE_IDS]
     except ValueError as exc:
         raise ImproperlyConfigured("Pilot zone IDs must be UUIDs") from exc
+# Job broadcast: offer each confirmed booking to every eligible technician in its area at once; technicians
+# who already have a job that day see it after this many seconds (or at once when nobody else can take it).
+JOB_BROADCAST_ENABLED = os.getenv("JOB_BROADCAST_ENABLED", "true").lower() == "true"
+JOB_BROADCAST_BUSY_DELAY_SECONDS = int(os.getenv("JOB_BROADCAST_BUSY_DELAY_SECONDS", "240"))
 AUTOMATIC_DISPATCH_ENABLED = os.getenv("AUTOMATIC_DISPATCH_ENABLED", "true" if ENVIRONMENT == "development" else "false").lower() == "true"
 NEW_SERVICE_ZONES_ENABLED = os.getenv("NEW_SERVICE_ZONES_ENABLED", "true" if ENVIRONMENT == "development" else "false").lower() == "true"
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "false").lower() == "true"
