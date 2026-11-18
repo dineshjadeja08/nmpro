@@ -335,6 +335,9 @@
   .right-1 {
     right: var(--spacing);
   }
+  .right-2 {
+    right: calc(var(--spacing) * 2);
+  }
   .right-3\.5 {
     right: calc(var(--spacing) * 3.5);
   }
@@ -397,6 +400,9 @@
   }
   .my-1 {
     margin-block: var(--spacing);
+  }
+  .my-auto {
+    margin-block: auto;
   }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
@@ -493,6 +499,9 @@
   }
   .aspect-\[16\/5\] {
     aspect-ratio: 16/5;
+  }
+  .aspect-\[16\/7\] {
+    aspect-ratio: 16/7;
   }
   .aspect-\[16\/10\] {
     aspect-ratio: 16/10;
@@ -1441,6 +1450,9 @@
   .pr-10 {
     padding-right: calc(var(--spacing) * 10);
   }
+  .pr-16 {
+    padding-right: calc(var(--spacing) * 16);
+  }
   .pb-2 {
     padding-bottom: calc(var(--spacing) * 2);
   }
@@ -1739,9 +1751,6 @@
   }
   .text-teal-900 {
     color: var(--color-teal-900);
-  }
-  .text-teal-950 {
-    color: var(--color-teal-950);
   }
   .text-violet-700 {
     color: var(--color-violet-700);
