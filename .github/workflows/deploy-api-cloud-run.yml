@@ -1,0 +1,54 @@
+name: Deploy API to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: nammapros-api-production
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: nammapro-api
+  REGION: asia-southeast1
+  SERVICE: nammapros-api-production
+  IMAGE_REPOSITORY: nammapros
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/177323361322/locations/global/workloadIdentityPools/nammapros-github/providers/github-main
+          service_account: nammapros-github-deploy@nammapro-api.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push API image
+        run: |
+          gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${IMAGE_REPOSITORY}/nammapros-api:${GITHUB_SHA}"
+          docker build -f infrastructure/docker/api.Dockerfile -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy existing Cloud Run service
+        run: |
+          gcloud run services update "$SERVICE" \
+            --project="$PROJECT_ID" --region="$REGION" \
+            --image="$IMAGE" --quiet
+
+      - name: Check API and database readiness
+        run: |
+          URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')"
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$URL/api/v1/health/"
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "$URL/api/v1/ready/"

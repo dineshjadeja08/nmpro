@@ -1,8 +1,35 @@
 # Deploying NammaPros on Google Cloud
 
-Everything runs on **Cloud Run**: the Django API and the four websites (customer site, admin, operations,
-partner site). The database stays on **Neon**, Redis is **Upstash**, and files are in **Cloudinary**, so no
-Cloud SQL, Memorystore or VPC connector is needed.
+## Current backend deployment (18 November 2026)
+
+The Django API is deployed as `nammapros-api-production` in project `nammapro-api`, region
+`asia-southeast1`. Its public URL is
+`https://nammapros-api-production-177323361322.asia-southeast1.run.app`.
+The image is in the `nammapros` Artifact Registry repository. The production database is the
+NammaPros Neon project `dry-meadow-77179021` (database `neondb`, Singapore). Existing migrations
+were already applied. Redis is the private, authenticated Memorystore instance `nammapros-cache`;
+Cloud Run reaches it through Direct VPC egress on the default network. Cloudinary handles media.
+Secret Manager holds the database, Redis, Cloudinary and newly generated Django/JWT credentials.
+
+The service allows the three existing Netlify/Vercel site origins. Phone OTP is temporarily disabled
+(`PHONE_AUTH_DISABLED=true`) until MSG91 is configured; staff password login remains available.
+No websites, domain mapping, migration job or periodic job were deployed in this step.
+
+The organization policy restricts `allUsers` IAM bindings, so the service has the Cloud Run invoker
+IAM check disabled while application authentication remains active. Health and database readiness
+both return HTTP 200. See the ignored `cloud-run-env.yaml` for the current nonsecret environment.
+
+Pushes to GitHub `dineshjadeja08/nmpro` branch `main` run
+`.github/workflows/deploy-api-cloud-run.yml`. GitHub Actions uses Workload Identity Federation to
+build the API image, push it to Artifact Registry, update this existing Cloud Run service, and check
+health and database readiness. The workflow keeps the existing environment, secrets and VPC settings.
+It does not run database migrations; review and run new production migrations before merging code
+that requires them. The existing `phase7-config.yml` continues to run configuration checks.
+
+## Future deployment reference
+
+The Django API runs on Cloud Run. The customer, admin, operations and partner sites can be deployed
+later. The database stays on Neon and files are in Cloudinary.
 
 | Piece | Cloud Run service | Built from |
 |---|---|---|
@@ -28,15 +55,15 @@ gcloud iam service-accounts create nammapros-api --display-name="NammaPros API"
 export SERVICE_ACCOUNT=nammapros-api@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
-**Upstash Redis:** create a database at upstash.com (region close to Singapore), copy its `rediss://...`
-connection URL.
+For another environment, provision a private authenticated Memorystore Redis instance and configure
+Direct VPC egress, or use a managed Redis service with a `rediss://` connection URL.
 
 ## 2. Secrets (Secret Manager)
 
 Each command asks you to paste the value; nothing is written to the shell history.
 
 ```bash
-for name in django-secret jwt-signing-key database-url database-url-unpooled redis-url cloudinary-api-key cloudinary-api-secret; do
+for name in django-secret jwt-signing-key database-url database-url-unpooled redis-url cloudinary-api-key cloudinary-api-secret firebase-web-api-key; do
   echo "Paste nammapros-$ENV_NAME-$name, then press Enter and Ctrl-D:"
   gcloud secrets create nammapros-$ENV_NAME-$name --data-file=- --replication-policy=automatic
 done
@@ -48,10 +75,11 @@ gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SERV
 | django-secret, jwt-signing-key | two **different** random strings, 50+ characters (`python -c "import secrets;print(secrets.token_urlsafe(64))"`) |
 | database-url | Neon **pooled** connection string (host contains `-pooler`) |
 | database-url-unpooled | Neon **direct** connection string (same host without `-pooler`) |
-| redis-url | Upstash `rediss://...` URL |
+| redis-url | Private Memorystore AUTH URL with `REDIS_PRIVATE_VPC=true`, or a `rediss://` URL |
 | cloudinary-api-key, cloudinary-api-secret | Cloudinary → Settings → API Keys |
+| firebase-web-api-key | Firebase web app API key used by the API to verify Phone Auth ID tokens |
 
-Use new values for the Django key, JWT key and Neon password: the old ones were shared in chat.
+Use new Django and JWT keys. Coordinate a Neon password rotation with any other service sharing the database.
 
 ## 3. Deploy the API
 

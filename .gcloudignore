@@ -10,5 +10,6 @@ node_modules
 docs
 planning
 mobile/
+tmp/
 .neon
 **/.venv

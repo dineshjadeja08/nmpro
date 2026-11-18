@@ -24,14 +24,17 @@ class FirebaseAuthProvider:
         if not id_token or not isinstance(id_token, str):
             raise FirebaseTokenInvalid("Missing ID token")
 
-        # Support development / test mock tokens
-        if id_token.startswith("dev-token:") or id_token.startswith("mock:") or getattr(settings, "ENVIRONMENT", "") == "development" and id_token.startswith("dev_"):
+        # Mock tokens are strictly local/test credentials.
+        environment = getattr(settings, "ENVIRONMENT", "")
+        if environment in {"development", "test"} and (
+            id_token.startswith("dev-token:") or id_token.startswith("mock:") or id_token.startswith("dev_")
+        ):
             parts = id_token.split(":")
             phone = parts[1] if len(parts) > 1 else "+919876543210"
             return {"uid": f"dev_{phone}", "phone_number": phone}
 
         # In testing without live credentials
-        if not self.web_api_key and getattr(settings, "ENVIRONMENT", "") != "production":
+        if not self.web_api_key and environment in {"development", "test"}:
             # If payload is a JWT, decode payload safely for test/staging inspection
             try:
                 segments = id_token.split(".")

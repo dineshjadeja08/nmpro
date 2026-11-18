@@ -59,6 +59,8 @@ class CsrfView(APIView):
 
 def issue_otp(phone):
     """Create an OTP challenge for a phone (rate limited). Returns the response body."""
+    if settings.PHONE_AUTH_DISABLED:
+        raise ProviderUnavailable("Phone sign-in is not configured yet.")
     now = timezone.now()
     latest = OTPChallenge.objects.filter(phone_e164=phone).order_by("-created_at").first()
     if latest and latest.created_at > now - timedelta(seconds=60):
@@ -86,6 +88,8 @@ def consume_otp(phone, challenge_id, code):
 
     Must run inside a transaction (the challenge row is locked).
     """
+    if settings.PHONE_AUTH_DISABLED:
+        raise ProviderUnavailable("Phone sign-in is not configured yet.")
     challenge_id = serializers.UUIDField().run_validation(challenge_id)
     if not isinstance(code, str) or not re.fullmatch(rf"\d{{{settings.OTP_CODE_LENGTH}}}", code):
         raise ValidationError({"code": ["Enter the configured verification code."]})
@@ -175,6 +179,8 @@ class FirebaseAuthView(APIView):
     throttle_scope = "otp_verify"
 
     def post(self, request):
+        if settings.PHONE_AUTH_DISABLED:
+            raise ProviderUnavailable("Phone sign-in is not configured yet.")
         from domains.administration.models import StaffRole
         from domains.notifications.models import NotificationPreference
         from domains.operations.models import OperationsGrant

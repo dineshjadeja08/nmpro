@@ -3,10 +3,13 @@ import subprocess
 import sys
 
 import pytest
+from django.test import override_settings
 from django.db import IntegrityError, transaction
 from rest_framework.test import APIClient
 
 from domains.catalog.models import Category, Service
+from domains.users.providers.firebase import FirebaseAuthProvider, FirebaseUnavailable
+from domains.users.views import ProviderUnavailable, issue_otp
 
 
 @pytest.mark.django_db
@@ -64,3 +67,16 @@ def test_production_configuration_fails_without_required_secrets():
     )
     assert result.returncode != 0
     assert "need a private secret" in result.stderr
+
+
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_managed_firebase_auth_rejects_mock_tokens(environment):
+    with override_settings(ENVIRONMENT=environment, FIREBASE_WEB_API_KEY=""):
+        with pytest.raises(FirebaseUnavailable):
+            FirebaseAuthProvider().verify_token("dev-token:+919876543210")
+
+
+def test_phone_auth_can_be_explicitly_disabled_without_creating_challenge():
+    with override_settings(PHONE_AUTH_DISABLED=True):
+        with pytest.raises(ProviderUnavailable):
+            issue_otp("+919876543210")

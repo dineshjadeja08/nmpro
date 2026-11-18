@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Deploys the Django API to Cloud Run, plus the migration job that uses the same image.
-# Database: Neon (or any Postgres over TLS). Redis: Upstash (rediss://). Files: Cloudinary.
-# Optional: CLOUDSQL_INSTANCE and VPC_CONNECTOR for Cloud SQL / Memorystore instead.
+# Database: Neon (or any Postgres over TLS). Redis: private Memorystore or TLS Redis. Files: Cloudinary.
+# Optional: CLOUDSQL_INSTANCE, VPC_CONNECTOR, or VPC_NETWORK and VPC_SUBNET.
 #
 #   NAMMAPROS_DEPLOY_APPROVED=yes PROJECT_ID=... REGION=asia-south1 ENV_NAME=production \
 #   IMAGE_REPOSITORY=nammapros IMAGE_TAG=$(git rev-parse --short HEAD) \
@@ -31,6 +31,9 @@ SECRETS="${SECRETS:-DJANGO_SECRET_KEY=$P-django-secret:latest,JWT_SIGNING_KEY=$P
 NETWORK_FLAGS=()
 [[ -n "${CLOUDSQL_INSTANCE:-}" ]] && NETWORK_FLAGS+=(--add-cloudsql-instances="$CLOUDSQL_INSTANCE")
 [[ -n "${VPC_CONNECTOR:-}" ]] && NETWORK_FLAGS+=(--vpc-connector="$VPC_CONNECTOR" --vpc-egress=private-ranges-only)
+if [[ -n "${VPC_NETWORK:-}" && -n "${VPC_SUBNET:-}" ]]; then
+  NETWORK_FLAGS+=(--network="$VPC_NETWORK" --subnet="$VPC_SUBNET" --vpc-egress=private-ranges-only)
+fi
 
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${IMAGE_REPOSITORY}/nammapros-api:${IMAGE_TAG}"
 gcloud builds submit . --project="$PROJECT_ID" --config=infrastructure/deployment/cloudbuild.yaml --substitutions="_IMAGE=$IMAGE"
@@ -46,6 +49,5 @@ gcloud run deploy "nammapros-api-$ENV_NAME" --project="$PROJECT_ID" --region="$R
   --env-vars-file="$ENV_FILE" --set-secrets="$SECRETS" "${NETWORK_FLAGS[@]}" \
   --cpu=1 --memory=1Gi --concurrency=20 --min-instances=0 --max-instances=3 \
   --timeout=60 --port=8080 --allow-unauthenticated \
-  --startup-probe="tcpSocket.port=8080,initialDelaySeconds=10,periodSeconds=10,failureThreshold=12" \
-  --liveness-probe="tcpSocket.port=8080,periodSeconds=30,failureThreshold=3"
+  --startup-probe="tcpSocket.port=8080,initialDelaySeconds=10,periodSeconds=10,failureThreshold=12"
 echo "API deployed. Run the migration job (run-migration.sh), then check <service-url>/api/v1/health/."

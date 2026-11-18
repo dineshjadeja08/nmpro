@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlparse
 from uuid import UUID
@@ -112,8 +113,22 @@ if ENVIRONMENT in {"staging", "production"} and not REDIS_URL:
     raise ImproperlyConfigured("Managed environments need REDIS_URL for shared throttling and jobs")
 _redis_host = (urlparse(REDIS_URL).hostname or "") if REDIS_URL else ""
 _is_render_internal_redis = REDIS_URL.startswith("redis://") and _redis_host.startswith("red-") and "." not in _redis_host
-if ENVIRONMENT in {"staging", "production"} and not (REDIS_URL.startswith("rediss://") or _is_render_internal_redis):
-    raise ImproperlyConfigured("Managed Redis must use TLS (rediss://)")
+_is_private_vpc_redis = (
+    REDIS_URL.startswith("redis://")
+    and os.getenv("REDIS_PRIVATE_VPC", "false").lower() == "true"
+    and bool(_redis_host)
+)
+if _is_private_vpc_redis:
+    try:
+        _redis_address = ip_address(_redis_host)
+        _is_private_vpc_redis = (
+            _redis_address.is_private and not _redis_address.is_loopback
+            and not _redis_address.is_link_local and bool(urlparse(REDIS_URL).password)
+        )
+    except ValueError:
+        _is_private_vpc_redis = False
+if ENVIRONMENT in {"staging", "production"} and not (REDIS_URL.startswith("rediss://") or _is_render_internal_redis or _is_private_vpc_redis):
+    raise ImproperlyConfigured("Managed Redis must use TLS or an authenticated private VPC address")
 CACHES = {"default": {"BACKEND": "django_redis.cache.RedisCache", "LOCATION": REDIS_URL,
                       "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient", "IGNORE_EXCEPTIONS": False},
                       "KEY_PREFIX": f"nammapros:{ENVIRONMENT}"}} if REDIS_URL and ENVIRONMENT != "test" else {
@@ -228,6 +243,9 @@ if EMAIL_PROVIDER == "SMTP" and not all((EMAIL_FROM_ADDRESS, EMAIL_HOST, EMAIL_H
 FIREBASE_PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "")
 FIREBASE_WEB_API_KEY = os.getenv("FIREBASE_WEB_API_KEY", "")
 FIREBASE_AUTH_DOMAIN = os.getenv("FIREBASE_AUTH_DOMAIN", "")
+PHONE_AUTH_DISABLED = os.getenv("PHONE_AUTH_DISABLED", "false").lower() == "true"
+if ENVIRONMENT in {"staging", "production"} and FIREBASE_PROJECT_ID and not FIREBASE_WEB_API_KEY:
+    raise ImproperlyConfigured("Firebase Phone Auth requires FIREBASE_WEB_API_KEY in managed environments")
 
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
@@ -241,7 +259,7 @@ LOCATION_PROVIDER_TIMEOUT_SECONDS = int(os.getenv("LOCATION_PROVIDER_TIMEOUT_SEC
 LOCATION_AUTOCOMPLETE_CACHE_SECONDS = int(os.getenv("LOCATION_AUTOCOMPLETE_CACHE_SECONDS", "300"))
 LOCATION_REVERSE_CACHE_SECONDS = int(os.getenv("LOCATION_REVERSE_CACHE_SECONDS", "86400"))
 
-if ENVIRONMENT in {"staging", "production"} and not (FIREBASE_PROJECT_ID or (MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID)):
+if ENVIRONMENT in {"staging", "production"} and not (PHONE_AUTH_DISABLED or FIREBASE_PROJECT_ID or (MSG91_AUTH_KEY and MSG91_OTP_TEMPLATE_ID)):
     raise ImproperlyConfigured("Customer authentication in managed environments requires Firebase or approved OTP credentials")
 if RAZORPAY_ENABLED:
     if not all((RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET)):
