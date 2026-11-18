@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "NMPRO Partner",
+    "slug": "nmpro-partner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.nammapros.partner",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Take photos of your Aadhaar, PAN and profile photo for verification.",
+        "NSPhotoLibraryUsageDescription": "Choose photos of your documents for verification."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#800020",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.nammapros.partner",
+      "permissions": [
+        "CAMERA",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-audio",
+      [
+        "expo-notifications",
+        {
+          "color": "#800020",
+          "sounds": [
+            "./assets/sounds/job_alert.wav"
+          ]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Take photos of your Aadhaar, PAN and profile photo for verification."
+        }
+      ]
+    ],
+    "scheme": "nmpropartner",
+    "primaryColor": "#800020",
+    "extra": {
+      "apiBaseUrl": "https://nmpro.onrender.com"
+    }
+  }
+}
