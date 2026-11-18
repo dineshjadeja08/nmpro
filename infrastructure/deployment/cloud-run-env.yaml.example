@@ -1,15 +1,24 @@
+# Copy to cloud-run-env.yaml (not committed) and replace every REPLACE_ value.
+# Secrets (database, Redis, Django/JWT keys, Cloudinary key and secret) live in Secret Manager instead;
+# see infrastructure/deployment/GOOGLE_CLOUD.md.
 NAMMAPROS_ENV: production
 DJANGO_DEBUG: "false"
-DJANGO_ALLOWED_HOSTS: api.example.invalid
-DJANGO_CSRF_TRUSTED_ORIGINS: https://example.invalid,https://pro.example.invalid,https://admin.example.invalid,https://ops.example.invalid
-CORS_ALLOWED_ORIGINS: https://example.invalid,https://pro.example.invalid,https://admin.example.invalid,https://ops.example.invalid
+# The API's Cloud Run host (and later your own domain), comma-separated, no https://
+DJANGO_ALLOWED_HOSTS: REPLACE_nammapros-api-production-xxxxx.a.run.app
+# Every website that calls the API: customer site, admin, operations, partner site (with https://)
+CORS_ALLOWED_ORIGINS: REPLACE_https://web-url,https://admin-url,https://ops-url,https://partner-url
+DJANGO_CSRF_TRUSTED_ORIGINS: REPLACE_https://web-url,https://admin-url,https://ops-url,https://partner-url
 DJANGO_TRUST_PROXY_HEADERS: "true"
-PRIVATE_MEDIA_BUCKET: REPLACE_PRIVATE_BUCKET
-MSG91_OTP_TEMPLATE_ID: REPLACE_APPROVED_TEMPLATE
+# Sites and API on different domains (*.run.app) need cross-site cookies until you use your own domain.
+DJANGO_CROSS_SITE_COOKIES: "true"
+CLOUDINARY_CLOUD_NAME: mxu0xmyq
+CLOUDINARY_FOLDER: nammapros
+FIREBASE_PROJECT_ID: REPLACE_firebase-project-id
 PUBLIC_BOOKING_ENABLED: "false"
 PILOT_ENABLED: "false"
 AUTOMATIC_DISPATCH_ENABLED: "false"
 NEW_SERVICE_ZONES_ENABLED: "false"
+JOB_BROADCAST_ENABLED: "true"
 RAZORPAY_ENABLED: "false"
 WHATSAPP_ENABLED: "false"
 TECHNICIAN_PAYOUTS_ENABLED: "false"

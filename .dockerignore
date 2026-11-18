@@ -1,6 +1,6 @@
 .git
 .neon
-node_modules
+**/node_modules
 **/.venv
 **/.next
 **/__pycache__
@@ -17,3 +17,5 @@ node_modules
 tmp
 docs
 planning
+mobile
+**/.expo

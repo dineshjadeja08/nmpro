@@ -9,3 +9,6 @@ node_modules
 **/db.sqlite3
 docs
 planning
+mobile/
+.neon
+**/.venv

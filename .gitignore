@@ -19,3 +19,6 @@ reference_ps_coreF1/
 !.gitkeep
 *.tsbuildinfo
 .neon
+
+# Filled-in Cloud Run settings
+infrastructure/deployment/cloud-run-env.yaml
