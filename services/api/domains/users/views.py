@@ -218,22 +218,60 @@ class FirebaseAuthView(APIView):
         return Response({"id": user.pk, "phone_e164": phone, "role": "CUSTOMER", **tokens})
 
 
+def is_staff_account(user) -> bool:
+    """Admin, operations or technician-review staff. Only they may sign in with a password."""
+    from domains.administration.models import StaffRole
+    from domains.operations.models import OperationsGrant
+    from domains.technicians.models import TechnicianAdminGrant
+
+    return bool(user.is_superuser or StaffRole.objects.filter(user=user).exists()
+                or OperationsGrant.objects.filter(user=user).exists()
+                or TechnicianAdminGrant.objects.filter(user=user).exists())
+
+
+PASSWORD_MAX_FAILURES = 5
+PASSWORD_LOCK_SECONDS = 15 * 60
+
+
+def _normalise_identifier(raw: str) -> str:
+    raw = raw.strip()
+    digits = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
+    if digits.isdigit() and len(digits) == 10:
+        return f"+91{digits}"
+    return digits if digits.startswith("+") and len(digits) >= 11 else raw
+
+
+@method_decorator(csrf_protect_unless_app, name="dispatch")
 class PasswordLoginView(APIView):
+    """Staff sign-in (admin and operations sites) with phone number or username and password.
+
+    Customers and partners sign in with OTP; accounts without a staff role get the same "invalid
+    credentials" answer as a wrong password. Five wrong passwords lock the account for 15 minutes.
+    """
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "otp_verify"
 
     def post(self, request):
-        identifier = (request.data.get("username") or request.data.get("phone_e164") or "").strip()
+        from django.core.cache import cache
+
+        identifier = _normalise_identifier(str(request.data.get("username") or request.data.get("phone_e164") or ""))
         password = request.data.get("password") or ""
         if not identifier or not password:
-            raise ValidationError({"detail": "Username or phone and password are required."})
+            raise ValidationError({"detail": "Enter your phone number or username and password."})
+        lock_key = f"password-login-failures:{identifier.lower()}"
+        if (cache.get(lock_key) or 0) >= PASSWORD_MAX_FAILURES:
+            raise TooManyRequests("Too many wrong attempts. Try again in 15 minutes.")
         User = get_user_model()
         candidate = User.objects.filter(phone_e164=identifier).first() or User.objects.filter(username=identifier).first()
         user = authenticate(request._request, username=candidate.username, password=password) if candidate else None
-        if not user or not user.is_active:
-            return Response({"error": {"code": "INVALID_CREDENTIALS", "message": "Invalid credentials.", "fields": {}, "request_id": ""}}, status=401)
+        if not user or not user.is_active or not is_staff_account(user):
+            failures = (cache.get(lock_key) or 0) + 1
+            cache.set(lock_key, failures, PASSWORD_LOCK_SECONDS)
+            return Response({"error": {"code": "INVALID_CREDENTIALS", "message": "Invalid phone number or password.",
+                                       "fields": {}, "request_id": ""}}, status=401)
+        cache.delete(lock_key)
         login(request._request, user, backend="django.contrib.auth.backends.ModelBackend")
         request._request.session["privileged_verified_at"] = timezone.now().timestamp()
         tokens = issue_token_pair(user)

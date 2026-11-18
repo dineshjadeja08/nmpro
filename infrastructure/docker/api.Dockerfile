@@ -18,4 +18,5 @@ RUN python -m pip install --no-index --find-links=/wheels -r requirements-produc
 COPY services/api/ /app/
 USER app
 EXPOSE 8080
-CMD ["sh", "-c", "exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8080} --workers ${GUNICORN_WORKERS:-2} --threads ${GUNICORN_THREADS:-4} --timeout ${GUNICORN_TIMEOUT:-60} --graceful-timeout 30 --access-logfile - --error-logfile -"]
+# bootstrap_admin creates the first admin from BOOTSTRAP_ADMIN_* variables (no-op when unset; never blocks start).
+CMD ["sh", "-c", "python manage.py bootstrap_admin || true; exec gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8080} --workers ${GUNICORN_WORKERS:-2} --threads ${GUNICORN_THREADS:-4} --timeout ${GUNICORN_TIMEOUT:-60} --graceful-timeout 30 --access-logfile - --error-logfile -"]

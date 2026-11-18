@@ -198,9 +198,8 @@ export default function Portal() {
   const [me, setMe] = useState<Me | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
   const [phone, setPhone] = useState("+91");
-  const [challenge, setChallenge] = useState("");
-  const [code, setCode] = useState("");
-  const [devCode, setDevCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -331,16 +330,12 @@ export default function Portal() {
     setBusy(true);
     setError("");
     try {
-      if (!challenge) {
-        const r = await api<{ challenge_id: string; development_code?: string }>("/auth/otp/request/", "POST", { phone_e164: phone });
-        setChallenge(r.challenge_id);
-        setDevCode(r.development_code ?? "");
-      } else {
-        await api("/auth/otp/verify/", "POST", { phone_e164: phone, challenge_id: challenge, code });
-        clearCsrf();
-        setMe(await api<Me>("/admin/me/"));
-        router.push("/dashboard");
-      }
+      // Staff sign in with phone number (or username) and password; the session cookie keeps them signed in.
+      await api("/auth/password/login/", "POST", { phone_e164: phone.replace(/\s/g, ""), password });
+      setPassword("");
+      clearCsrf();
+      setMe(await api<Me>("/admin/me/"));
+      router.push("/dashboard");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sign in failed.");
     } finally {
@@ -371,50 +366,58 @@ export default function Portal() {
             </span>
             <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-teal-700">Staff Control Console</p>
             <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Admin Sign In</h1>
-            <p className="mt-1 text-xs text-slate-500">Sign in with an approved phone number to manage platform operations</p>
+            <p className="mt-1 text-xs text-slate-500">Sign in with your staff phone number and password</p>
           </div>
 
-          <div className="mt-6 space-y-4">
+          <form className="mt-6 space-y-4" onSubmit={(e) => { e.preventDefault(); if (!busy) void signIn(); }}>
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">Phone Number</label>
+              <label htmlFor="admin-phone" className="block text-xs font-bold text-slate-700 uppercase tracking-wide">Phone number</label>
               <input
+                id="admin-phone"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                autoComplete="tel"
+                autoComplete="username"
+                inputMode="tel"
+                required
                 className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
                 placeholder="+91..."
               />
             </div>
 
-            {challenge && (
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">One Time Code (OTP)</label>
+            <div>
+              <label htmlFor="admin-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wide">Password</label>
+              <div className="relative mt-1">
                 <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  autoComplete="one-time-code"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
-                  placeholder="6-digit code"
+                  id="admin-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 pr-16 text-sm text-slate-900 outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-700/20"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="absolute inset-y-0 right-2 my-auto h-7 rounded px-2 text-xs font-bold text-teal-800 hover:bg-teal-50"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
               </div>
-            )}
+            </div>
 
-            {devCode && (
-              <div className="rounded-lg bg-teal-50 border border-teal-200 p-3 text-xs text-teal-900 font-semibold">
-                Development Test Code: <span className="font-mono font-bold text-teal-950">{devCode}</span>
-              </div>
-            )}
-
-            {error && <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">{error}</div>}
+            {error && <div role="alert" className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800">{error}</div>}
 
             <button
-              onClick={signIn}
-              disabled={busy}
+              type="submit"
+              disabled={busy || !password || phone.replace(/\D/g, "").length < 10}
               className="w-full rounded-lg bg-teal-700 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-teal-800 disabled:opacity-50 transition"
             >
-              {busy ? "Processing..." : challenge ? "Verify & Sign In" : "Send Verification Code"}
+              {busy ? "Signing in..." : "Sign in"}
             </button>
-          </div>
+            <p className="text-center text-[11px] text-slate-500">Forgot your password? Ask a super admin to reset it.</p>
+          </form>
         </section>
       </main>
     );
