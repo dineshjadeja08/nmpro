@@ -37,13 +37,13 @@ export default async function Home() {
 
           <div className="relative hidden items-end justify-center sm:flex lg:justify-end">
             <Image
-              src="/images/brand/hero-technician-cutout.png"
-              alt="Verified NammaPros home service technician"
-              width={346}
-              height={566}
+              src="/images/brand/hero-technicians-pair.webp"
+              alt="Two verified NammaPros technicians in uniform with tool belts"
+              width={838}
+              height={909}
               priority
               unoptimized
-              className="relative z-10 h-[380px] w-auto object-contain object-bottom md:h-[440px] lg:h-[520px] xl:h-[545px]"
+              className="relative z-10 h-[380px] w-auto object-contain object-bottom md:h-[440px] lg:h-[500px] xl:h-[530px]"
             />
 
             {/* Compact corner floating pill leaves tool belt uncovered */}
