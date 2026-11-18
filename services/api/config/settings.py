@@ -233,6 +233,8 @@ CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME", "")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY", "")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_ENABLED = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+# Every upload goes under this Cloudinary folder: <folder>/catalog/... (public) and <folder>/private/... (signed).
+CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "nammapros").strip("/") or "nammapros"
 
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 LOCATION_PROVIDER_TIMEOUT_SECONDS = int(os.getenv("LOCATION_PROVIDER_TIMEOUT_SECONDS", "6"))
@@ -257,11 +259,17 @@ USE_TZ = True
 STATIC_URL = "static/"
 MEDIA_ROOT = BASE_DIR / "var" / "private-media"
 PRIVATE_MEDIA_BUCKET = os.getenv("PRIVATE_MEDIA_BUCKET", "")
+# Private files (KYC documents, invoices, review photos): a Google Cloud bucket when one is configured,
+# otherwise Cloudinary "authenticated" storage. Public catalogue images always go to Cloudinary when it is set.
 if PRIVATE_MEDIA_BUCKET:
     STORAGES = {"default": {"BACKEND": "common.storage.PrivateGCSStorage"},
                 "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}}
+elif CLOUDINARY_ENABLED:
+    STORAGES = {"default": {"BACKEND": "common.cloudinary_storage.CloudinaryPrivateStorage"},
+                "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}}
 elif ENVIRONMENT in {"staging", "production"}:
-    raise ImproperlyConfigured("Managed environments require PRIVATE_MEDIA_BUCKET")
+    raise ImproperlyConfigured("Managed environments need file storage: set the CLOUDINARY_* variables "
+                               "(or PRIVATE_MEDIA_BUCKET for a Google Cloud bucket)")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"

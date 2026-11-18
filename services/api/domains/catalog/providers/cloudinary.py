@@ -22,6 +22,8 @@ class CloudinaryProvider:
         if not self.is_configured:
             return None
         timestamp = int(time.time())
+        root = getattr(settings, "CLOUDINARY_FOLDER", "") or "nammapros"
+        folder = f"{root}/{folder.strip('/')}"
         to_sign = f"folder={folder}&timestamp={timestamp}{self.api_secret}"
         signature = hashlib.sha1(to_sign.encode("utf-8")).hexdigest()
 
