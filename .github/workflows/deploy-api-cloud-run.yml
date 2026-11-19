@@ -3,6 +3,9 @@ name: Deploy API to Cloud Run
 on:
   push:
     branches: [main]
+    paths:
+      - services/api/**
+      - infrastructure/docker/api.Dockerfile
   workflow_dispatch:
 
 permissions:

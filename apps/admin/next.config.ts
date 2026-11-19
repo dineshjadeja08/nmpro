@@ -1,14 +1,13 @@
-import path from "node:path";
 import type { NextConfig } from "next";
 
-// Container builds (Google Cloud Run) set NEXT_OUTPUT=standalone: a self-contained server in .next/standalone.
-// The tracing root is the monorepo root so shared packages are included. Netlify/Vercel builds are unchanged.
+// Keep standalone output rooted at this app so Firebase App Hosting finds its route manifest.
 const standalone = process.env.NEXT_OUTPUT === "standalone"
-  ? { output: "standalone" as const, outputFileTracingRoot: path.resolve(process.cwd(), "../..") }
+  ? { output: "standalone" as const }
   : {};
 
 const nextConfig: NextConfig = {
   ...standalone,
+  outputFileTracingRoot: process.cwd(),
   transpilePackages: ["@nammapros/ui", "@nammapros/config", "@nammapros/types", "@nammapros/api-client"],
   images: {
     dangerouslyAllowLocalIP: process.env.NODE_ENV !== "production",
