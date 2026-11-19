@@ -41,8 +41,24 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - run: npm run build --workspace @nammapros/${{ matrix.app }}
+      - name: Install app dependencies
+        if: matrix.app == 'web' || matrix.app == 'admin'
+        run: npm ci --workspaces=false
+        working-directory: apps/${{ matrix.app }}
+      - name: Install monorepo dependencies
+        if: matrix.app == 'technician' || matrix.app == 'operations'
+        run: npm ci
+      - name: Build web or admin
+        if: matrix.app == 'web' || matrix.app == 'admin'
+        run: npm run build --workspaces=false
+        working-directory: apps/${{ matrix.app }}
+        env:
+          NEXT_PUBLIC_SITE_URL: https://example.invalid
+          NEXT_PUBLIC_API_BASE_URL: https://api.example.invalid
+          API_BASE_URL: https://api.example.invalid
+      - name: Build technician or operations
+        if: matrix.app == 'technician' || matrix.app == 'operations'
+        run: npm run build --workspace @nammapros/${{ matrix.app }}
         env:
           NEXT_PUBLIC_SITE_URL: https://example.invalid
           NEXT_PUBLIC_API_BASE_URL: https://api.example.invalid
