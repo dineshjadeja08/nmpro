@@ -58,6 +58,17 @@ class AdminStaffView(APIView):
     def get(self, request):
         require(request.user, "MANAGE_STAFF")
         qs = get_user_model().objects.filter(admin_roles__isnull=False).distinct().prefetch_related("admin_roles").order_by("id")
+        query = (request.query_params.get("q") or "").strip()[:80]
+        if query:
+            qs = qs.filter(Q(first_name__icontains=query) | Q(phone_e164__icontains=query) | Q(email__icontains=query))
+        role = request.query_params.get("role")
+        if role:
+            role = serializers.ChoiceField(choices=ROLES).run_validation(role)
+            qs = qs.filter(admin_roles__role=role)
+        status = request.query_params.get("status")
+        if status:
+            status = serializers.ChoiceField(choices=("active", "inactive")).run_validation(status)
+            qs = qs.filter(is_active=status == "active")
         return paged(request, qs, staff_data)
 
     @transaction.atomic
@@ -183,8 +194,10 @@ class AdminRolesView(APIView):
     def get(self, request):
         require(request.user, "MANAGE_STAFF")
         overrides = {(r.role, r.permission_code) for r in RolePermission.objects.all()}
-        return Response({"roles": [{"name": role, "permissions": sorted(
-            p for p, defaults in CAPABILITIES.items() if role in defaults or (role, p) in overrides)}
+        return Response({"roles": [{"name": role,
+            "default_permissions": sorted(p for p, defaults in CAPABILITIES.items() if role in defaults),
+            "extra_permissions": sorted(p for p in CAPABILITIES if (role, p) in overrides and role not in CAPABILITIES[p]),
+            "permissions": sorted(p for p, defaults in CAPABILITIES.items() if role in defaults or (role, p) in overrides)}
             for role in ROLES], "capabilities": sorted(CAPABILITIES)})
 
     def post(self, request):

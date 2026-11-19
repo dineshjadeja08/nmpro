@@ -40,7 +40,7 @@ import { AdminEmptyState } from "./admin/admin-empty-state";
 import { AdminBookingDrawer } from "./admin-booking-drawer";
 import { CouponsManager } from "./admin-coupons";
 import { DataRequestsManager } from "./admin-data-requests";
-import { ChangePasswordDialog, StaffManager } from "./staff-manager";
+import { ChangePasswordDialog, RolePermissions, StaffManager } from "./staff-manager";
 
 type Me = { id: number; phone_e164: string; roles: string[]; capabilities: string[] };
 type Field = { key: string; label?: string; type?: "number" | "date" | "datetime-local" | "checkbox" | "json"; required?: boolean };
@@ -743,7 +743,7 @@ export default function Portal() {
               {can("MANAGE_STAFF") ? <>
                 <StaffManager currentUserId={me.id} />
                 <LeadZoneGrants />
-                <Roles data={data} onChange={action} canEdit />
+                <RolePermissions />
               </> : <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Only super admins can manage staff accounts.</p>}
             </div>
           )}
@@ -1492,36 +1492,6 @@ function ReportTabs({ period, start, end }: { period: string; start: string; end
           ))}
         </dl>
       )}
-    </section>
-  );
-}
-
-function Roles({ data, onChange, canEdit }: { data: unknown; onChange: (url: string, method: string, body?: unknown, confirmText?: string) => void; canEdit: boolean }) {
-  const roles = (data as { roles?: { name: string; permissions: string[] }[] } | null)?.roles ?? [];
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-bold text-slate-900 mb-2">Staff Roles & Permissions</h2>
-      <div className="divide-y divide-slate-100">
-        {roles.map((r) => (
-          <div key={r.name} className="py-3 flex items-center justify-between gap-4">
-            <div>
-              <strong className="text-xs font-bold text-slate-900 uppercase tracking-wide">{r.name}</strong>
-              <p className="text-xs text-slate-500 mt-0.5">{r.permissions.join(" · ") || "Default access"}</p>
-            </div>
-            {canEdit && r.name !== "SUPER_ADMIN" && (
-              <button
-                onClick={() => {
-                  const permission_code = window.prompt("Enter capability code to grant:");
-                  if (permission_code) onChange(`/admin/roles/${r.name}/`, "PATCH", { permission_code, enabled: true }, "Grant this permission?");
-                }}
-                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50"
-              >
-                Grant Capability
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
     </section>
   );
 }

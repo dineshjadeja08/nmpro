@@ -6,7 +6,7 @@ from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from domains.administration.models import StaffRole
+from domains.administration.models import RolePermission, StaffRole
 
 
 @pytest.fixture
@@ -96,3 +96,27 @@ def test_staff_can_change_own_password_but_cannot_manage_staff(super_admin):
     assert client.post("/api/v1/admin/me/password/", {"current_password": "New-admin-password-84",
         "new_password": "Third-admin-password-84"}, format="json").status_code == 429
     cache.delete(key)
+
+
+@pytest.mark.django_db
+def test_staff_directory_filters_and_role_permission_metadata(super_admin):
+    client, admin = super_admin
+    user_model = get_user_model()
+    maya = user_model.objects.create_user(username="+919800000011", phone_e164="+919800000011",
+        first_name="Maya", email="maya@example.com")
+    jaya = user_model.objects.create_user(username="+919800000012", phone_e164="+919800000012",
+        first_name="Jaya", is_active=False)
+    StaffRole.objects.create(user=maya, role="SUPPORT_AGENT", assigned_by=admin)
+    StaffRole.objects.create(user=jaya, role="FINANCE_VIEWER", assigned_by=admin)
+    directory = "/api/v1/admin/staff/"
+    assert [row["id"] for row in client.get(directory, {"q": "MAYA"}).json()["results"]] == [maya.id]
+    assert client.get(directory, {"role": "SUPPORT_AGENT", "status": "inactive"}).json()["count"] == 0
+    assert client.get(directory, {"role": "FINANCE_VIEWER", "status": "inactive"}).json()["count"] == 1
+    assert client.get(directory, {"role": "INVALID"}).status_code == 400
+
+    RolePermission.objects.create(role="SUPPORT_AGENT", permission_code="VIEW_FINANCE")
+    response = client.get("/api/v1/admin/roles/")
+    assert response.status_code == 200
+    support = next(row for row in response.json()["roles"] if row["name"] == "SUPPORT_AGENT")
+    assert "VIEW_ADMIN" in support["default_permissions"]
+    assert support["extra_permissions"] == ["VIEW_FINANCE"]

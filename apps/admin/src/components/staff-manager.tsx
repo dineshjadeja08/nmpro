@@ -10,7 +10,11 @@ type Staff = {
   email: string;
   is_active: boolean;
   roles: string[];
+  last_login?: string | null;
 };
+
+type RoleAccess = { name: string; permissions: string[]; default_permissions: string[]; extra_permissions: string[] };
+type RolesResponse = { roles: RoleAccess[]; capabilities: string[] };
 
 const roles = [
   "SUPER_ADMIN", "FINANCE_ADMIN", "FINANCE_VIEWER", "OPERATIONS_MANAGER",
@@ -18,11 +22,23 @@ const roles = [
 ];
 const roleLabel = (role: string) => role.replaceAll("_", " ");
 const inputClass = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-teal-700";
+const capabilityDescriptions: Record<string, string> = {
+  VIEW_ADMIN: "Open the admin portal", VIEW_FINANCE: "View financial reports", APPROVE_REFUNDS: "Approve customer refunds",
+  APPROVE_SETTLEMENTS: "Approve settlement records", INITIATE_PAYOUTS: "Start technician payouts",
+  MANAGE_PRICING: "Change prices", MANAGE_SERVICES: "Edit services and categories",
+  MANAGE_TECHNICIANS: "Manage technician accounts", VERIFY_KYC: "Verify identity documents",
+  MANAGE_STAFF: "Manage staff accounts and permissions", VIEW_AUDIT: "View audit history",
+  CHANGE_SETTINGS: "Change platform settings",
+};
 
 export function StaffManager({ currentUserId }: { currentUserId: number }) {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -37,16 +53,25 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
   const [resetConfirm, setResetConfirm] = useState("");
 
   useEffect(() => {
+    const timer = window.setTimeout(() => { setSearch(searchInput.trim()); setPage(1); }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
     let active = true;
     setLoading(true);
-    api<{ results: Staff[]; count: number }>(`/admin/staff/?page=${page}`)
+    const params = new URLSearchParams({ page: String(page) });
+    if (search) params.set("q", search);
+    if (roleFilter) params.set("role", roleFilter);
+    if (statusFilter) params.set("status", statusFilter);
+    api<{ results: Staff[]; count: number }>(`/admin/staff/?${params}`)
       .then((result) => {
         if (active) { setStaff(result.results); setCount(result.count); setError(""); }
       })
       .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load staff."); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [page, refresh]);
+  }, [page, refresh, search, roleFilter, statusFilter]);
 
   async function run(task: () => Promise<unknown>, message: string) {
     setBusy(true);
@@ -130,7 +155,7 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-bold text-slate-900">Staff accounts</h2>
-            <p className="mt-1 text-xs text-slate-500">Create accounts with a password, update access, and reset staff passwords.</p>
+            <p className="mt-1 text-xs text-slate-500">Find people, manage access, and reset passwords.</p>
           </div>
           <button type="button" onClick={() => { setCreating(!creating); setSelected(null); setError(""); }}
             className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white hover:bg-teal-800">
@@ -140,8 +165,29 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
         {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         {notice && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
 
+        <div className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-[minmax(0,1fr)_180px_150px]">
+          <label className="text-xs font-bold text-slate-700">Search staff
+            <input className={inputClass} type="search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="Name, phone, or email" />
+          </label>
+          <label className="text-xs font-bold text-slate-700">Role
+            <select className={inputClass} value={roleFilter} onChange={(event) => { setRoleFilter(event.target.value); setPage(1); }}>
+              <option value="">All roles</option>{roles.map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}
+            </select>
+          </label>
+          <label className="text-xs font-bold text-slate-700">Status
+            <select className={inputClass} value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}>
+              <option value="">Any status</option><option value="active">Active</option><option value="inactive">Inactive</option>
+            </select>
+          </label>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+          <span>{loading ? "Loading staff…" : `${count} matching ${count === 1 ? "account" : "accounts"}`}</span>
+          {(searchInput || roleFilter || statusFilter) && <button type="button" className="font-semibold text-teal-800 hover:underline" onClick={() => { setSearchInput(""); setSearch(""); setRoleFilter(""); setStatusFilter(""); setPage(1); }}>Clear filters</button>}
+        </div>
+
         {creating && (
-          <form onSubmit={(event) => void createStaff(event)} className="mt-5 grid gap-4 border-t border-slate-200 pt-5 sm:grid-cols-2">
+          <form onSubmit={(event) => void createStaff(event)} className="mt-5 grid gap-4 rounded-xl border border-teal-200 bg-teal-50/40 p-5 sm:grid-cols-2">
+            <div className="sm:col-span-2"><h3 className="text-sm font-bold text-slate-900">New staff account</h3><p className="mt-1 text-xs text-slate-600">Use an international phone number and a unique initial password of at least 12 characters.</p></div>
             <label className="text-xs font-bold text-slate-700">Phone number
               <input className={inputClass} required value={create.phone_e164} onChange={(event) => setCreate({ ...create, phone_e164: event.target.value })} placeholder="+919876543210" />
             </label>
@@ -168,25 +214,25 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
 
         <div className="mt-5 overflow-x-auto">
           {loading ? <p className="py-8 text-center text-sm text-slate-500">Loading staff...</p> : (
-            <table className="w-full min-w-[650px] text-left text-sm">
+            <table className="w-full min-w-[760px] text-left text-sm">
               <thead className="border-b border-slate-200 text-xs uppercase text-slate-500"><tr>
-                <th className="py-3 pr-3">Name</th><th className="py-3 pr-3">Phone</th><th className="py-3 pr-3">Roles</th><th className="py-3 pr-3">Status</th><th className="py-3">Action</th>
+                <th className="py-3 pr-3">Staff member</th><th className="py-3 pr-3">Phone</th><th className="py-3 pr-3">Roles</th><th className="py-3 pr-3">Status</th><th className="py-3">Action</th>
               </tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {staff.map((row) => <tr key={row.id}>
-                  <td className="py-3 pr-3 font-semibold text-slate-900">{row.first_name || "Unnamed"}{row.id === currentUserId ? " (you)" : ""}</td>
+                  <td className="py-3 pr-3"><span className="font-semibold text-slate-900">{row.first_name || "Unnamed"}{row.id === currentUserId ? " (you)" : ""}</span><span className="block text-xs text-slate-500">{row.email || "No email"}</span></td>
                   <td className="py-3 pr-3">{row.phone_e164}</td>
-                  <td className="py-3 pr-3">{row.roles.map(roleLabel).join(", ")}</td>
-                  <td className="py-3 pr-3">{row.is_active ? "Active" : "Inactive"}</td>
+                  <td className="py-3 pr-3"><div className="flex max-w-xs flex-wrap gap-1">{row.roles.map((role) => <span key={role} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">{roleLabel(role)}</span>)}</div></td>
+                  <td className="py-3 pr-3"><span className={`rounded-full px-2 py-1 text-[11px] font-bold ${row.is_active ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{row.is_active ? "Active" : "Inactive"}</span></td>
                   <td className="py-3"><button type="button" onClick={() => { edit(row); setCreating(false); }} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-bold text-teal-800 hover:bg-slate-50">Manage</button></td>
                 </tr>)}
               </tbody>
             </table>
           )}
-          {!loading && staff.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No staff accounts found.</p>}
+          {!loading && staff.length === 0 && <p className="py-8 text-center text-sm text-slate-500">{search || roleFilter || statusFilter ? "No staff match these filters." : "No staff accounts found. Add the first account above."}</p>}
         </div>
         <div className="mt-4 flex items-center justify-end gap-3 text-xs text-slate-600">
-          <span>{count} total</span>
+          <span>{count} matching</span>
           <button disabled={page === 1 || loading} onClick={() => setPage(page - 1)} className="rounded border px-3 py-1 disabled:opacity-40">Previous</button>
           <span>Page {page}</span>
           <button disabled={page * 20 >= count || loading} onClick={() => setPage(page + 1)} className="rounded border px-3 py-1 disabled:opacity-40">Next</button>
@@ -196,7 +242,7 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
       {selected && (
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-base font-bold text-slate-900">Manage {selected.first_name || selected.phone_e164}</h2>
+            <div><h2 className="text-base font-bold text-slate-900">Manage {selected.first_name || selected.phone_e164}</h2><p className="mt-1 text-xs text-slate-500">{selected.phone_e164} · {selected.is_active ? "Active" : "Inactive"}{selected.last_login ? ` · Last signed in ${new Date(selected.last_login).toLocaleDateString()}` : " · Never signed in"}</p></div>
             <button onClick={() => setSelected(null)} className="text-xs font-bold text-slate-600 hover:text-slate-900">Close</button>
           </div>
           <form onSubmit={(event) => void saveProfile(event)} className="mt-4 grid gap-4 sm:grid-cols-3">
@@ -234,6 +280,71 @@ export function StaffManager({ currentUserId }: { currentUserId: number }) {
       )}
     </section>
   );
+}
+
+export function RolePermissions() {
+  const [data, setData] = useState<RolesResponse | null>(null);
+  const [selectedRole, setSelectedRole] = useState("SUPPORT_AGENT");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api<RolesResponse>("/admin/roles/")
+      .then((result) => { if (active) { setData(result); setError(""); } })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load permissions."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const role = data?.roles.find((item) => item.name === selectedRole);
+
+  async function updateCapability(code: string, enabled: boolean) {
+    if (!window.confirm(`${enabled ? "Grant" : "Remove"} ${roleLabel(code)} ${enabled ? "to" : "from"} ${roleLabel(selectedRole)}?`)) return;
+    setBusy(code);
+    setError("");
+    setNotice("");
+    try {
+      await api(`/admin/roles/${selectedRole}/`, "PATCH", { permission_code: code, enabled });
+      const updated = await api<RolesResponse>("/admin/roles/");
+      setData(updated);
+      setNotice(`${roleLabel(code)} ${enabled ? "granted" : "removed"} for ${roleLabel(selectedRole)}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The permission could not be changed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="flex flex-wrap items-end justify-between gap-4">
+      <div><h2 className="text-base font-bold text-slate-900">Role permissions</h2><p className="mt-1 text-xs text-slate-500">Review what each role can do and manage additional access.</p></div>
+      <label className="min-w-48 text-xs font-bold text-slate-700">Select role
+        <select className={inputClass} value={selectedRole} onChange={(event) => { setSelectedRole(event.target.value); setError(""); setNotice(""); }}>
+          {roles.map((item) => <option key={item} value={item}>{roleLabel(item)}</option>)}
+        </select>
+      </label>
+    </div>
+    {error && <p role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+    {notice && <p role="status" className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
+    {loading ? <p className="py-8 text-sm text-slate-500">Loading permissions…</p> : role && <>
+      <p className="mt-5 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">{roleLabel(selectedRole)} has {role.permissions.length} {role.permissions.length === 1 ? "permission" : "permissions"}. Built-in permissions are fixed; additional grants can be removed here.</p>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {data?.capabilities.map((code) => {
+          const builtIn = role.default_permissions.includes(code);
+          const granted = role.extra_permissions.includes(code);
+          return <div key={code} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3">
+            <div><p className="text-xs font-bold text-slate-900">{roleLabel(code)}</p><p className="mt-0.5 text-xs text-slate-500">{capabilityDescriptions[code] ?? "Admin capability"}</p></div>
+            {builtIn ? <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Built in</span>
+              : <button type="button" disabled={!!busy || selectedRole === "SUPER_ADMIN"} onClick={() => void updateCapability(code, !granted)}
+                className={`shrink-0 rounded-lg border px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${granted ? "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100" : "border-teal-300 text-teal-800 hover:bg-teal-50"}`}>{busy === code ? "Saving…" : granted ? "Remove grant" : "Grant"}</button>}
+          </div>;
+        })}
+      </div>
+    </>}
+  </section>;
 }
 
 export function ChangePasswordDialog({ onClose, onChanged }: { onClose: () => void; onChanged: () => void }) {
