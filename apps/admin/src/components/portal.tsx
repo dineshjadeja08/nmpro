@@ -40,6 +40,7 @@ import { AdminEmptyState } from "./admin/admin-empty-state";
 import { AdminBookingDrawer } from "./admin-booking-drawer";
 import { CouponsManager } from "./admin-coupons";
 import { DataRequestsManager } from "./admin-data-requests";
+import { ChangePasswordDialog, StaffManager } from "./staff-manager";
 
 type Me = { id: number; phone_e164: string; roles: string[]; capabilities: string[] };
 type Field = { key: string; label?: string; type?: "number" | "date" | "datetime-local" | "checkbox" | "json"; required?: boolean };
@@ -160,10 +161,6 @@ const views: Record<string, View> = {
     title: "Staff and Roles",
     endpoint: "/admin/staff/",
     permission: "MANAGE_STAFF",
-    fields: [
-      { key: "phone_e164", required: true },
-      { key: "role", required: true },
-    ],
   },
   "/notifications": { title: "Notifications", endpoint: "/admin/notifications/" },
   "/audit-logs": { title: "Audit Logs", endpoint: "/admin/audit-logs/", permission: "VIEW_AUDIT" },
@@ -200,6 +197,7 @@ export default function Portal() {
   const [phone, setPhone] = useState("+91");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -266,6 +264,8 @@ export default function Portal() {
       ? "/admin/settings/"
       : path === "/reports"
       ? "/admin/reports/bookings/"
+      : path === "/staff"
+      ? "/admin/roles/"
       : endpoint;
 
   const load = useCallback(async () => {
@@ -423,7 +423,7 @@ export default function Portal() {
     );
   }
 
-  const isList = !!config && !detailMatch && !["/dashboard", "/reports", "/leads", "/leads/create", "/reviews", "/faqs", "/website/banners", "/website/carousel", "/website/offers", "/data-requests", "/services", "/services/categories", "/technicians"].includes(path);
+  const isList = !!config && !detailMatch && !["/dashboard", "/reports", "/leads", "/leads/create", "/reviews", "/faqs", "/website/banners", "/website/carousel", "/website/offers", "/data-requests", "/services", "/services/categories", "/technicians", "/staff"].includes(path);
   const list = pickRows(data);
   const metricSource = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
   const metrics = path === "/dashboard" ? (metricSource.metrics as Record<string, unknown> | undefined) : undefined;
@@ -566,6 +566,7 @@ export default function Portal() {
             setPage(1);
           }}
           onSignOut={handleSignOut}
+          onChangePassword={() => setShowPasswordDialog(true)}
         />
 
         {/* Workspace Container */}
@@ -739,9 +740,11 @@ export default function Portal() {
           {/* Staff & Roles */}
           {path === "/staff" && (
             <div className="space-y-6">
-              <StaffTools onSubmit={action} />
-              <LeadZoneGrants />
-              <Roles data={data} onChange={action} canEdit={can("MANAGE_STAFF")} />
+              {can("MANAGE_STAFF") ? <>
+                <StaffManager currentUserId={me.id} />
+                <LeadZoneGrants />
+                <Roles data={data} onChange={action} canEdit />
+              </> : <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Only super admins can manage staff accounts.</p>}
             </div>
           )}
 
@@ -921,6 +924,7 @@ export default function Portal() {
               </div>
             </div>
           )}
+          {showPasswordDialog && <ChangePasswordDialog onClose={() => setShowPasswordDialog(false)} onChanged={() => setNotice("Your password was changed.")} />}
         </main>
       </div>
     </div>
@@ -1568,38 +1572,6 @@ function Settings({ data, onChange, canEdit }: { data: unknown; onChange: (url: 
           Edit Setting
         </button>
       )}
-    </section>
-  );
-}
-
-function StaffTools({ onSubmit }: { onSubmit: (url: string, method: string, body?: unknown, confirmText?: string) => void }) {
-  const [id, setId] = useState("");
-  const [role, setRole] = useState("");
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm max-w-xl">
-      <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide mb-1">Staff Access Management</h2>
-      <p className="text-xs text-slate-500 mb-4">Modify staff roles or toggle account activity.</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">Staff User ID</label>
-          <input type="number" value={id} onChange={(e) => setId(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 text-sm" />
-        </div>
-        <div>
-          <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-1">Role</label>
-          <input value={role} onChange={(e) => setRole(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 text-sm" placeholder="e.g. OPERATIONS_MANAGER" />
-        </div>
-        <div className="sm:col-span-2 flex flex-wrap gap-2 pt-2">
-          <button disabled={!id || !role} onClick={() => onSubmit(`/admin/staff/${id}/`, "PATCH", { remove_role: role }, "Remove this role?")} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            Remove Role
-          </button>
-          <button disabled={!id} onClick={() => onSubmit(`/admin/staff/${id}/`, "PATCH", { is_active: false }, "Deactivate account?")} className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50">
-            Deactivate Account
-          </button>
-          <button disabled={!id} onClick={() => onSubmit(`/admin/staff/${id}/`, "PATCH", { is_active: true }, "Reactivate account?")} className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50">
-            Reactivate Account
-          </button>
-        </div>
-      </div>
     </section>
   );
 }

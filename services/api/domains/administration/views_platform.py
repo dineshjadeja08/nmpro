@@ -1,11 +1,14 @@
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation, update_session_auth_hash
+from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
+from rest_framework.exceptions import Throttled
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -35,9 +38,18 @@ class AdminMeView(APIView):
 
 
 def staff_data(user):
-    return {"id": user.id, "username": user.username, "phone_e164": user.phone_e164,
+    return {"id": user.id, "username": user.username, "first_name": user.first_name, "phone_e164": user.phone_e164,
         "email": user.email, "is_active": user.is_active, "last_login": user.last_login,
         "roles": [r.role for r in user.admin_roles.all()]}
+
+
+def staff_password(raw, user):
+    password = serializers.CharField(min_length=12, max_length=128, trim_whitespace=False).run_validation(raw)
+    try:
+        password_validation.validate_password(password, user)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError({"password": exc.messages}) from exc
+    return password
 
 
 class AdminStaffView(APIView):
@@ -58,8 +70,15 @@ class AdminStaffView(APIView):
             defaults={"username": phone, "is_active": True})
         if not created and not user.is_active:
             raise serializers.ValidationError("Activate the existing account explicitly.")
+        user.set_password(staff_password(request.data.get("password"), user))
+        if "first_name" in request.data:
+            user.first_name = serializers.CharField(max_length=150, allow_blank=True).run_validation(request.data["first_name"])
+        if "email" in request.data:
+            user.email = serializers.EmailField(allow_blank=True).run_validation(request.data["email"])
+        user.save()
         StaffRole.objects.get_or_create(user=user, role=role, defaults={"assigned_by": request.user})
         audit(request.user, "STAFF_ROLE_ASSIGNED", "User", user.id, {"role": role})
+        audit(request.user, "STAFF_PASSWORD_SET", "User", user.id)
         return Response(staff_data(get_user_model().objects.prefetch_related("admin_roles").get(pk=user.pk)), status=201)
 
 
@@ -71,8 +90,29 @@ class AdminStaffDetailView(APIView):
         require(request.user, "MANAGE_STAFF")
         require_recent_auth(request)
         user = get_object_or_404(get_user_model().objects.select_for_update(), id=staff_id)
-        if user.id == request.user.id:
+        if user.id == request.user.id and any(key in request.data for key in ("is_active", "add_role", "remove_role")):
             raise serializers.ValidationError("Your own account and roles need another administrator.")
+        changed_fields = []
+        if "first_name" in request.data:
+            user.first_name = serializers.CharField(max_length=150, allow_blank=True).run_validation(request.data["first_name"])
+            changed_fields.append("first_name")
+        if "email" in request.data:
+            user.email = serializers.EmailField(allow_blank=True).run_validation(request.data["email"])
+            changed_fields.append("email")
+        if "phone_e164" in request.data:
+            phone = serializers.RegexField(r"^\+[1-9]\d{7,14}$").run_validation(request.data["phone_e164"])
+            if get_user_model().objects.exclude(pk=user.pk).filter(phone_e164=phone).exists():
+                raise serializers.ValidationError({"phone_e164": ["This phone number is already in use."]})
+            if user.username == user.phone_e164:
+                if get_user_model().objects.exclude(pk=user.pk).filter(username=phone).exists():
+                    raise serializers.ValidationError({"phone_e164": ["This phone number is already in use."]})
+                user.username = phone
+                changed_fields.append("username")
+            user.phone_e164 = phone
+            changed_fields.append("phone_e164")
+        if changed_fields:
+            user.save(update_fields=changed_fields)
+            audit(request.user, "STAFF_DETAILS_CHANGED", "User", user.id, {"fields": changed_fields})
         if "is_active" in request.data:
             active = serializers.BooleanField().run_validation(request.data["is_active"])
             if not active and user.admin_roles.filter(role="SUPER_ADMIN").exists() and StaffRole.objects.filter(
@@ -92,6 +132,49 @@ class AdminStaffDetailView(APIView):
             StaffRole.objects.filter(user=user, role=role).delete()
             audit(request.user, "STAFF_ROLE_REMOVED", "User", user.id, {"role": role})
         return Response(staff_data(get_user_model().objects.prefetch_related("admin_roles").get(pk=user.pk)))
+
+
+class AdminStaffPasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, staff_id):
+        require(request.user, "MANAGE_STAFF")
+        require_recent_auth(request)
+        user = get_object_or_404(get_user_model().objects.select_for_update(), id=staff_id)
+        if user.id == request.user.id:
+            raise serializers.ValidationError("Use Change Password for your own account.")
+        if not user.admin_roles.exists():
+            raise serializers.ValidationError("This account is not a staff member.")
+        user.set_password(staff_password(request.data.get("new_password"), user))
+        user.save(update_fields=["password"])
+        audit(request.user, "STAFF_PASSWORD_RESET", "User", user.id)
+        return Response({"detail": "Password updated."})
+
+
+class AdminMyPasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        require(request.user, "VIEW_ADMIN")
+        failure_key = f"staff-password-change-failures:{request.user.pk}"
+        if (cache.get(failure_key) or 0) >= 5:
+            raise Throttled(wait=900, detail="Too many wrong attempts. Try again in 15 minutes.")
+        current = serializers.CharField(trim_whitespace=False).run_validation(request.data.get("current_password"))
+        if not request.user.check_password(current):
+            cache.set(failure_key, (cache.get(failure_key) or 0) + 1, 900)
+            raise serializers.ValidationError({"current_password": ["Current password is incorrect."]})
+        cache.delete(failure_key)
+        password = staff_password(request.data.get("new_password"), request.user)
+        if password == current:
+            raise serializers.ValidationError({"new_password": ["Choose a different password."]})
+        request.user.set_password(password)
+        request.user.save(update_fields=["password"])
+        update_session_auth_hash(request._request, request.user)
+        request.session["privileged_verified_at"] = timezone.now().timestamp()
+        audit(request.user, "STAFF_PASSWORD_CHANGED", "User", request.user.id)
+        return Response({"detail": "Password updated."})
 
 
 class AdminRolesView(APIView):

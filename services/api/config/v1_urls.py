@@ -23,7 +23,7 @@ from domains.administration.views_bookings_prd import (
     AdminTimeSlotsView, AdminWorkOrderCloseView, AdminWorkOrdersView,
 )
 from domains.administration.views_platform import (
-    AdminMeView, AdminStaffView, AdminStaffDetailView, AdminStaffGroupsView,
+    AdminMeView, AdminMyPasswordView, AdminStaffView, AdminStaffDetailView, AdminStaffPasswordView, AdminStaffGroupsView,
     AdminStaffGroupDetailView, AdminRolesView, AdminSettingsView,
     AdminAuditView, AdminNotificationsView, AdminNotificationActionView,
     AdminGlobalSearchView, AdminReportsView,
@@ -316,6 +316,8 @@ urlpatterns = [
     path("admin/reports/<str:kind>/", AdminReportsView.as_view()),
     path("admin/staff/", AdminStaffView.as_view()),
     path("admin/staff/<int:staff_id>/", AdminStaffDetailView.as_view()),
+    path("admin/staff/<int:staff_id>/password/", AdminStaffPasswordView.as_view()),
+    path("admin/me/password/", AdminMyPasswordView.as_view()),
     path("admin/staff-groups/", AdminStaffGroupsView.as_view()),
     path("admin/staff-groups/<uuid:group_id>/", AdminStaffGroupDetailView.as_view()),
     path("admin/roles/", AdminRolesView.as_view()),

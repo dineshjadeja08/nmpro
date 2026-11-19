@@ -64,4 +64,4 @@ def require_recent_auth(request, seconds=600):
             return
     verified_at = request.session.get("privileged_verified_at", 0)
     if not isinstance(verified_at, (int, float)) or timezone.now().timestamp() - verified_at > seconds:
-        raise PermissionDenied("Sign in again before this financial action.")
+        raise PermissionDenied("Sign in again before this sensitive action.")

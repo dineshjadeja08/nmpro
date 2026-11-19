@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { ChevronDown, LogOut, Menu, Search, X } from "lucide-react";
+import { ChevronDown, KeyRound, LogOut, Menu, Search, X } from "lucide-react";
 import { api } from "../../lib/api";
 import { AdminBrand } from "./admin-brand";
 import { adminNavigationSections } from "./admin-sidebar";
@@ -20,6 +20,7 @@ export function AdminTopbar({
   search,
   onSearchChange,
   onSignOut,
+  onChangePassword,
 }: {
   pathname: string;
   userPhone: string;
@@ -27,6 +28,7 @@ export function AdminTopbar({
   search: string;
   onSearchChange: (value: string) => void;
   onSignOut: () => void;
+  onChangePassword: () => void;
 }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
@@ -164,6 +166,10 @@ export function AdminTopbar({
                   <p className="text-xs font-bold text-slate-900">{userPhone}</p>
                   <p className="text-[10px] text-slate-500">{userRoles.join(" · ")}</p>
                 </div>
+                <button type="button" onClick={() => { setUserDropdownOpen(false); onChangePassword(); }}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  <KeyRound className="h-4 w-4" /> Change password
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -229,9 +235,13 @@ export function AdminTopbar({
                 </div>
               ))}
             </div>
+            <button type="button" onClick={() => { setMobileNavOpen(false); onChangePassword(); }}
+              className="mt-auto flex w-full items-center justify-center gap-2 rounded-lg border border-slate-500/30 py-2.5 text-sm font-bold text-slate-200 hover:bg-slate-800">
+              <KeyRound className="h-4 w-4" /> Change password
+            </button>
             <button
               onClick={onSignOut}
-              className="mt-auto flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-950/20 py-2.5 text-sm font-bold text-red-300 hover:bg-red-950/40"
+              className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-950/20 py-2.5 text-sm font-bold text-red-300 hover:bg-red-950/40"
             >
               <LogOut className="h-4 w-4" />
               Sign out
