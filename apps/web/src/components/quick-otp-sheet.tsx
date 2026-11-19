@@ -3,7 +3,7 @@
 import { ArrowRight, Loader2, ShieldCheck, Smartphone, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { bookingApi } from "@/lib/booking-api";
-import { confirmPhoneVerificationCode, sendPhoneVerificationCode } from "@/lib/firebase";
+import { confirmPhoneVerificationCode, isFirebaseConfigured, sendPhoneVerificationCode } from "@/lib/firebase";
 
 type OtpCredential = Credential & { code?: string };
 
@@ -26,6 +26,15 @@ export function QuickOtpSheet({
   const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const phoneSignInAvailable = isFirebaseConfigured || process.env.NODE_ENV !== "production";
+
+  useEffect(() => {
+    if (open) return;
+    setChallengeSent(false);
+    setDevMode(false);
+    setOtp("");
+    setError("");
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -164,7 +173,11 @@ export function QuickOtpSheet({
 
         <div id="quick-otp-recaptcha" />
 
-        {!challengeSent ? (
+        {!phoneSignInAvailable ? (
+          <p role="status" className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+            Mobile sign-in is temporarily unavailable. Please try again later.
+          </p>
+        ) : !challengeSent ? (
           <form onSubmit={handleSendOtp} className="mt-4 space-y-4">
             <div className="flex min-h-[48px] items-center overflow-hidden rounded-lg border border-[#D6CEC6] bg-white px-4 focus-within:border-[#800020]">
               <span className="pr-3 text-sm font-bold text-[#57534E] border-r border-[#E8E1DB]">+91</span>
@@ -214,7 +227,9 @@ export function QuickOtpSheet({
                 type="button"
                 onClick={() => {
                   setChallengeSent(false);
+                  setDevMode(false);
                   setOtp("");
+                  setError("");
                 }}
                 className="min-h-[48px] rounded-md border border-[#D6CEC6] bg-white px-4 text-xs font-bold text-[#57534E]"
               >

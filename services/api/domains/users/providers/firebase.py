@@ -1,4 +1,5 @@
 import base64
+import binascii
 import json
 import logging
 import requests
@@ -59,6 +60,17 @@ class FirebaseAuthProvider:
                 users = data.get("users", [])
                 if not users:
                     raise FirebaseTokenInvalid("Firebase user not found")
+                if self.project_id:
+                    try:
+                        encoded_claims = id_token.split(".")[1]
+                        padded_claims = encoded_claims + "=" * (-len(encoded_claims) % 4)
+                        token_claims = json.loads(base64.urlsafe_b64decode(padded_claims))
+                    except (IndexError, ValueError, TypeError, binascii.Error) as exc:
+                        raise FirebaseTokenInvalid("Invalid Firebase ID token") from exc
+                    if (not isinstance(token_claims, dict) or
+                            token_claims.get("aud") != self.project_id or
+                            token_claims.get("iss") != f"https://securetoken.google.com/{self.project_id}"):
+                        raise FirebaseTokenInvalid("Firebase token belongs to another project")
                 user = users[0]
                 phone = user.get("phoneNumber")
                 if not phone:

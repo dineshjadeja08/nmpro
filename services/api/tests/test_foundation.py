@@ -1,3 +1,5 @@
+import base64
+import json
 import os
 import subprocess
 import sys
@@ -8,7 +10,7 @@ from django.db import IntegrityError, transaction
 from rest_framework.test import APIClient
 
 from domains.catalog.models import Category, Service
-from domains.users.providers.firebase import FirebaseAuthProvider, FirebaseUnavailable
+from domains.users.providers.firebase import FirebaseAuthProvider, FirebaseTokenInvalid, FirebaseUnavailable
 from domains.users.views import ProviderUnavailable, issue_otp
 
 
@@ -80,3 +82,21 @@ def test_phone_auth_can_be_explicitly_disabled_without_creating_challenge():
     with override_settings(PHONE_AUTH_DISABLED=True):
         with pytest.raises(ProviderUnavailable):
             issue_otp("+919876543210")
+
+
+def test_firebase_token_from_another_project_is_rejected(monkeypatch):
+    class LookupResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"users": [{"localId": "customer", "phoneNumber": "+919876543210"}]}
+
+    monkeypatch.setattr("domains.users.providers.firebase.requests.post", lambda *args, **kwargs: LookupResponse())
+    claims = {"aud": "another-project", "iss": "https://securetoken.google.com/another-project"}
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    with override_settings(ENVIRONMENT="production", FIREBASE_PROJECT_ID="nammapro-api", FIREBASE_WEB_API_KEY="public-key"):
+        with pytest.raises(FirebaseTokenInvalid):
+            FirebaseAuthProvider().verify_token(f"header.{payload}.signature")
