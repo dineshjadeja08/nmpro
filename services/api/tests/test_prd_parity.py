@@ -130,7 +130,7 @@ def test_catalogue_seo_blog_faq_banners_and_slug_redirect():
 
 
 @pytest.mark.django_db
-def test_spotlight_banners_are_editable_and_separate_from_offers():
+def test_spotlight_banners_are_editable_and_separate_from_offers(monkeypatch):
     admin = _make_admin("+919999990014")
     client = APIClient()
     client.force_authenticate(user=admin)
@@ -148,6 +148,19 @@ def test_spotlight_banners_are_editable_and_separate_from_offers():
     updated = public.get("/api/v1/catalog/").json()["spotlight_banners"]
     assert updated[-1]["title"] == "Updated AC art"
     assert updated[-1]["desktop_image_url"] == "https://example.com/new-ac.webp"
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from domains.catalog.providers.cloudinary import CloudinaryProvider
+
+    monkeypatch.setattr(CloudinaryProvider, "is_configured", True)
+    monkeypatch.setattr(CloudinaryProvider, "upload_image", lambda self, file_obj, filename=None, folder="catalog/services": {
+        "secure_url": "https://res.cloudinary.com/nammapros/image/upload/new-spotlight.webp",
+    })
+    upload = client.post("/api/v1/admin/homepage-banners/images/", {
+        "file": SimpleUploadedFile("spotlight.jpg", b"\xff\xd8\xff\xe0image", content_type="image/jpeg"),
+    }, format="multipart")
+    assert upload.status_code == 201, upload.content
+    assert upload.json()["url"].endswith("new-spotlight.webp")
 
     assert client.patch(f"/api/v1/admin/homepage-banners/{banner_id}/", {"is_active": False}, format="json").status_code == 200
     assert len(public.get("/api/v1/catalog/").json()["spotlight_banners"]) == 5

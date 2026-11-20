@@ -1303,6 +1303,7 @@ function HomepageBannersManager() {
   const [sortOrder, setSortOrder] = useState(0);
   const [isActive, setIsActive] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadingBannerId, setUploadingBannerId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -1319,18 +1320,40 @@ function HomepageBannersManager() {
     void loadBanners();
   }, [loadBanners]);
 
+  const uploadFile = async (file: File) => {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size === 0 || file.size > 5 * 1024 * 1024) {
+      throw new Error("Choose a JPG, PNG, or WebP image under 5 MB.");
+    }
+    const form = new FormData();
+    form.append("file", file);
+    const result = await uploadMultipart<{ url: string }>("/admin/homepage-banners/images/", form);
+    return result.url;
+  };
+
   const uploadBannerImage = async (file: File) => {
     setUploading(true);
     setErr("");
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const result = await uploadMultipart<{ url: string }>("/admin/homepage-banners/images/", form);
-      setImgUrl(result.url);
+      setImgUrl(await uploadFile(file));
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not upload image.");
     } finally {
       setUploading(false);
+    }
+  };
+
+  const replaceBannerImage = async (bannerId: string, file: File) => {
+    setUploadingBannerId(bannerId);
+    setErr("");
+    try {
+      const url = await uploadFile(file);
+      await api(`/admin/homepage-banners/${bannerId}/`, "PATCH", { desktop_image_url: url });
+      if (editingId === bannerId) setImgUrl(url);
+      await loadBanners();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not replace image.");
+    } finally {
+      setUploadingBannerId(null);
     }
   };
 
@@ -1385,7 +1408,11 @@ function HomepageBannersManager() {
                 <strong className="mt-2 block text-sm font-bold text-slate-900">{b.title}</strong>
                 {b.desktop_image_url && <img src={b.desktop_image_url} alt={b.title} className="mt-2 aspect-[788/442] w-full rounded-lg object-cover" />}
                 {b.subtitle ? <p className="mt-1 text-xs text-slate-600">{b.subtitle}</p> : null}
-                {b.desktop_image_url ? <p className="mt-1 truncate text-[11px] font-mono text-slate-500">{b.desktop_image_url}</p> : null}
+                {b.placement === "SPOTLIGHT" && <label className="mt-3 inline-flex cursor-pointer items-center rounded-lg border border-teal-200 bg-white px-3 py-2 text-xs font-bold text-teal-800 hover:bg-teal-50">
+                  {uploadingBannerId === b.id ? "Uploading..." : "Replace image"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingBannerId !== null} className="sr-only"
+                    onChange={(e) => { const file = e.target.files?.[0]; if (file) void replaceBannerImage(b.id, file); e.target.value = ""; }} />
+                </label>}
               </div>
               <div className="flex items-center gap-2 pt-2 border-t border-slate-200">
                 <button
@@ -1442,13 +1469,20 @@ function HomepageBannersManager() {
             <option value="SERVICE">Service</option>
             <option value="PROMO">Promo</option>
           </select>
-          <label className="block text-xs font-semibold text-slate-700">Upload banner image (JPG, PNG or WebP, up to 5 MB)
-            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadBannerImage(file); e.target.value = ""; }} className="mt-1 block w-full text-xs" />
-          </label>
+          <div className="rounded-xl border border-dashed border-teal-300 bg-teal-50/40 p-4">
+            <p className="text-sm font-bold text-slate-900">{placement === "SPOTLIGHT" ? "Spotlight image" : "Banner image"}</p>
+            <p className="mt-1 text-xs text-slate-600">Choose a JPG, PNG, or WebP file up to 5 MB. The recommended shape is 788 × 442 px.</p>
+            <label className="mt-3 inline-flex cursor-pointer items-center rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white hover:bg-teal-800">
+              {uploading ? "Uploading..." : imgUrl ? "Choose a different image" : "Choose image to upload"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadBannerImage(file); e.target.value = ""; }} className="sr-only" />
+            </label>
+            {imgUrl && <img src={imgUrl} alt="Banner preview" className="mt-3 aspect-[788/442] w-full rounded-lg object-cover" />}
+          </div>
           {uploading && <p className="text-xs text-teal-700">Uploading image...</p>}
-          <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="Desktop Image URL" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
-          {imgUrl && <img src={imgUrl} alt="Banner preview" className="aspect-[788/442] w-full rounded-lg object-cover" />}
-          <input value={mobileImgUrl} onChange={(e) => setMobileImgUrl(e.target.value)} placeholder="Mobile image URL (optional)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
+          {placement !== "SPOTLIGHT" && <>
+            <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="Desktop Image URL (optional alternative)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
+            <input value={mobileImgUrl} onChange={(e) => setMobileImgUrl(e.target.value)} placeholder="Mobile image URL (optional)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
+          </>}
           <input value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} placeholder="Target link (e.g. /services/ac-service)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
           {placement === "SPOTLIGHT" && <p className="text-xs text-slate-500">Destination examples: <code>category:ac</code>, <code>service:bathroom-cleaning</code>, <code>popup:handyman</code>, or a site path such as <code>/services</code>.</p>}
           <label className="block text-xs font-semibold text-slate-700">Display order
