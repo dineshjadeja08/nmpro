@@ -48,6 +48,7 @@ export interface PublicReview {
   tags?: string[];
   photo_url?: string | null;
   customer_name: string;
+  source?: "BOOKING" | "MANUAL";
   area?: string;
   technician_name?: string;
   service_name?: string;
@@ -132,6 +133,7 @@ export interface Service {
   landing_thumbnail?: string | null;
   popup_cover_image?: string | null;
   popup_content_image?: string | null;
+  brands_image?: string | null;
   list_image?: string | null;
   features?: string[];
   inclusions?: string[];

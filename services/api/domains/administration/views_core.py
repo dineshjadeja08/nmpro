@@ -108,6 +108,8 @@ def service_data(s):
             "exclusions": s.exclusions,
             "faqs": s.faq_items,
             "brands": s.brands or [],
+            "brands_image": s.brands_image_display,
+            "brands_image_url": s.brands_image_url,
             "seo_title": s.seo_title,
             "seo_description": s.seo_description,
             "banner_title": s.banner_title,
@@ -722,6 +724,7 @@ class ServiceInput(serializers.Serializer):
     landing_thumbnail_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
     popup_cover_image_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
     popup_content_image_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
+    brands_image_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
     list_image_url = serializers.CharField(max_length=500, required=False, allow_blank=True)
     sort_order = serializers.IntegerField(min_value=0, max_value=65535, required=False)
     is_active = serializers.BooleanField(required=False)
@@ -937,7 +940,7 @@ class AdminServiceImageView(APIView):
         upload, mime, cloudinary_res = _validate_and_upload_catalog_image(request)
 
         # Presentation image slots
-        if slot in ("cover_image", "landing_thumbnail", "popup_cover_image", "popup_content_image", "list_image"):
+        if slot in ("cover_image", "landing_thumbnail", "popup_cover_image", "popup_content_image", "brands_image", "list_image"):
             if cloudinary_res:
                 setattr(service, f"{slot}_url", cloudinary_res["secure_url"])
             field = getattr(service, slot)
@@ -971,7 +974,7 @@ class AdminServiceImageView(APIView):
         raw_slot = request.query_params.get("slot") or ""
         slot_aliases = {"main_image": "cover_image", "banner_image": "landing_thumbnail"}
         slot = slot_aliases.get(raw_slot, raw_slot)
-        if slot in ("cover_image", "landing_thumbnail", "popup_cover_image", "popup_content_image", "list_image"):
+        if slot in ("cover_image", "landing_thumbnail", "popup_cover_image", "popup_content_image", "brands_image", "list_image"):
             field = getattr(service, slot)
             if field:
                 field.delete(save=False)

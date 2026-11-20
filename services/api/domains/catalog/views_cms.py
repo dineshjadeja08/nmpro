@@ -228,11 +228,13 @@ class AdminHomepageBannerDetailView(APIView):
 
 
 def review_data(r):
-    return {"id": str(r.id), "booking_id": str(r.booking_id), "booking_reference": r.booking.reference,
+    return {"id": str(r.id), "booking_id": str(r.booking_id) if r.booking_id else None,
+            "booking_reference": r.booking.reference if r.booking_id else None,
             "service_id": str(r.service_id), "service": r.service.name,
             "technician_id": str(r.technician_id) if r.technician_id else None,
-            "reviewer_name": r.customer.get_full_name() or r.customer.phone_e164,
-            "customer_phone": r.customer.phone_e164, "rating": r.rating, "comment": r.comment,
+            "reviewer_name": r.manual_reviewer_name if r.source == "MANUAL" else (r.customer.get_full_name() or r.customer.phone_e164),
+            "customer_phone": r.customer.phone_e164 if r.customer_id else None,
+            "source": r.source, "rating": r.rating, "comment": r.comment,
             "is_visible": r.is_visible, "moderation_note": r.moderation_note, "created_at": r.created_at}
 
 
@@ -248,12 +250,30 @@ class AdminReviewsView(APIView):
             qs = qs.filter(is_visible=vis == "true")
         if request.query_params.get("technician"):
             qs = qs.filter(technician_id=request.query_params["technician"])
+        if request.query_params.get("service_id"):
+            service_id = serializers.UUIDField().run_validation(request.query_params["service_id"])
+            qs = qs.filter(service_id=service_id)
         if request.query_params.get("rating"):
-            qs = qs.filter(rating=int(request.query_params["rating"]))
+            qs = qs.filter(rating=serializers.IntegerField(min_value=1, max_value=5).run_validation(request.query_params["rating"]))
         q = (request.query_params.get("q") or request.query_params.get("search") or "").strip()[:80]
         if q:
-            qs = qs.filter(Q(comment__icontains=q) | Q(booking__reference__icontains=q) | Q(customer__phone_e164__icontains=q))
+            qs = qs.filter(Q(comment__icontains=q) | Q(booking__reference__icontains=q) |
+                Q(customer__phone_e164__icontains=q) | Q(manual_reviewer_name__icontains=q))
         return paged(request, qs, review_data)
+
+    def post(self, request):
+        require(request.user, "MANAGE_SERVICES")
+        service_id = serializers.UUIDField().run_validation(request.data.get("service_id"))
+        service = get_object_or_404(Service, id=service_id)
+        reviewer_name = serializers.CharField(min_length=2, max_length=100).run_validation(request.data.get("reviewer_name"))
+        rating = serializers.IntegerField(min_value=1, max_value=5).run_validation(request.data.get("rating"))
+        comment = serializers.CharField(min_length=10, max_length=2000).run_validation(request.data.get("comment"))
+        visible = serializers.BooleanField().run_validation(request.data.get("is_visible", False))
+        review = Review.objects.create(service=service, source="MANUAL", manual_reviewer_name=reviewer_name,
+            rating=rating, comment=comment, is_visible=visible, moderated_by=request.user)
+        audit(request.user, "REVIEW_MANUALLY_CREATED", "Review", review.id,
+            {"service_id": str(service.id), "is_visible": visible}, request=request)
+        return Response(review_data(review), status=201)
 
 
 class AdminReviewDetailView(APIView):
@@ -262,11 +282,25 @@ class AdminReviewDetailView(APIView):
     def patch(self, request, review_id):
         require(request.user, "VIEW_ADMIN")
         review = get_object_or_404(Review.objects.select_related("booking", "service", "customer"), id=review_id)
+        manual_fields = {"service_id", "reviewer_name", "rating", "comment"} & set(request.data)
+        if manual_fields:
+            require(request.user, "MANAGE_SERVICES")
+            if review.source != "MANUAL":
+                raise serializers.ValidationError("Booking reviews cannot be edited by staff.")
+            if "service_id" in manual_fields:
+                review.service = get_object_or_404(Service, id=serializers.UUIDField().run_validation(request.data["service_id"]))
+            if "reviewer_name" in manual_fields:
+                review.manual_reviewer_name = serializers.CharField(min_length=2, max_length=100).run_validation(request.data["reviewer_name"])
+            if "rating" in manual_fields:
+                review.rating = serializers.IntegerField(min_value=1, max_value=5).run_validation(request.data["rating"])
+            if "comment" in manual_fields:
+                review.comment = serializers.CharField(min_length=10, max_length=2000).run_validation(request.data["comment"])
         if "is_visible" in request.data:
-            review.is_visible = bool(request.data["is_visible"])
+            review.is_visible = serializers.BooleanField().run_validation(request.data["is_visible"])
         if "moderation_note" in request.data:
             review.moderation_note = str(request.data["moderation_note"])[:240]
         review.moderated_by = request.user
         review.save()
-        audit(request.user, "REVIEW_MODERATED", "Review", review.id, {"is_visible": review.is_visible}, request=request)
+        audit(request.user, "REVIEW_MODERATED", "Review", review.id,
+            {"is_visible": review.is_visible, "fields": sorted(manual_fields)}, request=request)
         return Response(review_data(review))

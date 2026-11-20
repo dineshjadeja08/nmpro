@@ -53,7 +53,8 @@ def _serialize_review(r):
         "comment": r.comment,
         "tags": r.tags or [],
         "photo_url": r.photo_display,
-        "customer_name": display_name(r.customer),
+        "customer_name": r.manual_reviewer_name if r.source == "MANUAL" else display_name(r.customer),
+        "source": r.source,
         "area": area,
         "technician_name": tech_name,
         "service_name": r.service.name if r.service_id else "",
@@ -128,6 +129,7 @@ def serialize_service(service, zone=None):
             "features": service.features, "inclusions": service.inclusions, "exclusions": service.exclusions,
             "faqs": service.faq_items, "process_steps": service.process_steps or [], "spare_parts_rates": service.spare_parts_rates or [],
             "brands": service.brands or [],
+            "brands_image": service.brands_image_display,
             "seo_title": service.seo_title, "seo_description": service.seo_description,
             "sort_order": service.sort_order,
             "banner_title": service.banner_title, "banner_subtitle": service.banner_subtitle,
@@ -318,6 +320,7 @@ class ServiceSlotMediaView(APIView):
             "landing_thumbnail": "landing_thumbnail",
             "popup_cover_image": "popup_cover_image",
             "popup_content_image": "popup_content_image",
+            "brands_image": "brands_image",
             "list_image": "list_image",
         }
         field_name = slot_map.get(slot)

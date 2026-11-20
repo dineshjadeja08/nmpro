@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { api, base, uploadMultipart } from "../lib/api";
+import { api, base, uploadImage, uploadMultipart } from "../lib/api";
 
 type Brand = { id: string; name: string; logo_url: string; is_active: boolean };
 type ServiceBrand = { name: string; logo_url?: string };
@@ -9,14 +9,15 @@ type ServiceBrand = { name: string; logo_url?: string };
 const src = (url?: string) => (!url ? "" : url.startsWith("http") ? url : `${base}${url}`);
 
 /** "Brands we service" for one service: pick from the brand library or add a new brand with its logo. */
-export function ServiceBrandsEditor({ serviceId, brands, canEdit, onSaved }: {
-  serviceId: string; brands: ServiceBrand[]; canEdit: boolean; onSaved: () => Promise<void> | void;
+export function ServiceBrandsEditor({ serviceId, brands, brandsImage, canEdit, onSaved }: {
+  serviceId: string; brands: ServiceBrand[]; brandsImage?: string | null; canEdit: boolean; onSaved: () => Promise<void> | void;
 }) {
   const [library, setLibrary] = useState<Brand[]>([]);
   const [selected, setSelected] = useState<ServiceBrand[]>(brands);
   const [pick, setPick] = useState("");
   const [newName, setNewName] = useState("");
   const [newLogo, setNewLogo] = useState<File | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
 
@@ -70,9 +71,51 @@ export function ServiceBrandsEditor({ serviceId, brands, canEdit, onSaved }: {
 
   const available = library.filter((b) => b.is_active && !selected.some((s) => s.name.toLowerCase() === b.name.toLowerCase()));
 
+  const uploadCombinedImage = async () => {
+    if (!imageFile) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await uploadImage(serviceId, imageFile, "brands_image");
+      setImageFile(null);
+      await onSaved();
+      setMsg({ text: "Combined brands image uploaded.", error: false });
+    } catch (e) {
+      setMsg({ text: e instanceof Error ? e.message : "Could not upload the image.", error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearCombinedImage = async () => {
+    if (!window.confirm("Remove the combined brands image? Individual brand logos will show again.")) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api(`/admin/services/${serviceId}/images/?slot=brands_image`, "DELETE");
+      await onSaved();
+      setMsg({ text: "Combined brands image removed.", error: false });
+    } catch (e) {
+      setMsg({ text: e instanceof Error ? e.message : "Could not remove the image.", error: true });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Brands we service (shown last in the pop-up)</p>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-bold text-slate-800">Single image with all brands</p>
+        <p className="mt-1 text-xs text-slate-500">Upload one PNG, JPG, or WebP image. It will appear in the service pop-up instead of the individual brand logos below.</p>
+        {brandsImage && <img src={src(brandsImage)} alt="Current brands we service image" className="mt-3 max-h-48 w-full rounded border border-slate-200 bg-white object-contain p-2" />}
+        {canEdit && <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input type="file" accept="image/png,image/jpeg,image/webp" aria-label="Combined brands image" onChange={(e) => setImageFile(e.target.files?.[0] ?? null)} className="max-w-full text-xs" />
+          <button type="button" disabled={busy || !imageFile} onClick={() => void uploadCombinedImage()} className="rounded-lg bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{busy ? "Saving..." : brandsImage ? "Replace image" : "Upload image"}</button>
+          {brandsImage && <button type="button" disabled={busy} onClick={() => void clearCombinedImage()} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 disabled:opacity-50">Remove image</button>}
+        </div>}
+      </div>
+      <p className="text-xs font-semibold text-slate-700">Individual brands {brandsImage ? "(kept as backup)" : ""}</p>
       {selected.length === 0 ? <p className="text-xs text-slate-400">No brands yet.</p> : (
         <ul className="flex flex-wrap gap-2">
           {selected.map((b) => (

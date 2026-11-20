@@ -76,6 +76,7 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
   const exclusions =
     (pkg?.exclusions && pkg.exclusions.length > 0 ? pkg.exclusions : service.exclusions) ?? [];
   const brands = (service.brands ?? []).filter((b) => Boolean(b?.name?.trim()));
+  const brandsImage = resolveUploadedMediaUrl(service.brands_image);
   const fullDescription = service.description || service.full_description || service.summary;
 
   // Body scroll lock, focus save/restore, Esc & focus trap
@@ -432,6 +433,7 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-2">
                           <strong className="text-[#1C1917]">{rev.customer_name}</strong>
+                          {rev.source === "MANUAL" && <span className="text-[10px] text-[#78716C]">Added by NammaPros</span>}
                           <span className="inline-flex items-center gap-0.5 text-[#C8A35B]" aria-label={`${rev.rating} stars`}>
                             {Array.from({ length: rev.rating }).map((_, idx) => (
                               <Star key={idx} size={11} className="fill-[#C8A35B] text-[#C8A35B]" />
@@ -459,12 +461,12 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
             </section>
 
             {/* 8. Brands we service (LAST section — hidden if empty) */}
-            {brands.length > 0 && (
+            {(brands.length > 0 || brandsImage) && (
               <section aria-label="Brands we service" className="space-y-2.5">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#57534E]">
                   Brands we service
                 </h3>
-                <div className="flex flex-wrap gap-2">
+                {brandsImage ? <Image src={brandsImage} alt="Brands we service" width={900} height={380} unoptimized className="max-h-64 w-full rounded-md border border-[#EAE3DC] bg-white object-contain" /> : <div className="flex flex-wrap gap-2">
                   {brands.map((brand) => {
                     const logo = resolveUploadedMediaUrl(brand.logo_url);
                     return (
@@ -486,7 +488,7 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
                       </span>
                     );
                   })}
-                </div>
+                </div>}
               </section>
             )}
           </div>

@@ -258,6 +258,46 @@ def test_admin_brand_validation_and_package_mrp(catalog):
     assert pkg.json()["is_most_booked"] is True
 
 
+def test_admin_can_add_service_review_without_booking_and_publish_it(catalog):
+    client = APIClient()
+    client.force_authenticate(user=_admin())
+    url = "/api/v1/admin/reviews/"
+    payload = {"service_id": str(catalog["foam"].id), "reviewer_name": "Anita",
+        "rating": 5, "comment": "The service was quick and careful.", "is_visible": False}
+    created = client.post(url, payload, format="json")
+    assert created.status_code == 201, created.content
+    review = created.json()
+    assert review["source"] == "MANUAL" and review["booking_id"] is None
+    assert APIClient().get("/api/v1/services/foam-jet-ac-service/reviews/").json()["count"] == 0
+    edited = client.patch(f"{url}{review['id']}/", {"is_visible": True, "reviewer_name": "Anita S."}, format="json")
+    assert edited.status_code == 200, edited.content
+    public = APIClient().get("/api/v1/services/foam-jet-ac-service/reviews/").json()
+    assert public["count"] == 1
+    assert public["results"][0]["source"] == "MANUAL"
+    assert public["results"][0]["customer_name"] == "Anita S."
+    assert client.get(url, {"service_id": str(catalog["foam"].id)}).json()["count"] == 1
+    assert client.post(url, {**payload, "rating": 6}, format="json").status_code == 400
+
+
+def test_single_brands_image_is_available_in_service_popup(catalog, tmp_path, settings, monkeypatch):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from domains.administration import views_core
+
+    settings.MEDIA_ROOT = tmp_path
+    client = APIClient()
+    client.force_authenticate(user=_admin())
+    image = SimpleUploadedFile("brands.png", b"\x89PNG\r\n\x1a\n" + b"0" * 40, content_type="image/png")
+    monkeypatch.setattr(views_core, "_validate_and_upload_catalog_image", lambda request: (request.FILES["file"], "image/png", None))
+    url = f"/api/v1/admin/services/{catalog['foam'].id}/images/"
+    uploaded = client.post(url, {"slot": "brands_image", "file": image}, format="multipart")
+    assert uploaded.status_code == 200, uploaded.content
+    public = APIClient().get("/api/v1/services/foam-jet-ac-service/").json()
+    assert public["brands_image"] == uploaded.json()["url"]
+    assert public["brands"] == catalog["foam"].brands
+    assert client.delete(url + "?slot=brands_image").status_code == 200
+    assert APIClient().get("/api/v1/services/foam-jet-ac-service/").json()["brands_image"] is None
+
+
 def test_city_landing_pages(catalog):
     from domains.catalog.models import SEOLandingPage
 

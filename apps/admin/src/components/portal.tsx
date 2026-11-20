@@ -709,7 +709,7 @@ export default function Portal() {
           )}
 
           {/* Reviews Moderation */}
-          {path === "/reviews" && <ReviewsManager />}
+          {path === "/reviews" && <ReviewsManager canCreate={can("MANAGE_SERVICES")} />}
 
           {/* Offer & referral codes */}
           {path === "/website/offers" && <CouponsManager />}
@@ -1018,23 +1018,58 @@ function PendingPaymentsPanel() {
 }
 
 
-function ReviewsManager() {
-  const [items, setItems] = useState<Array<{ id: string; booking_reference: string; service: string; customer_phone: string; rating: number; comment: string; is_visible: boolean; created_at: string }>>([]);
+function ReviewsManager({ canCreate }: { canCreate: boolean }) {
+  type ReviewRow = { id: string; booking_reference: string | null; service_id: string; service: string; reviewer_name: string; customer_phone: string | null; source: "BOOKING" | "MANUAL"; rating: number; comment: string; is_visible: boolean; created_at: string };
+  const emptyForm = { service_id: "", reviewer_name: "", rating: 5, comment: "", is_visible: false };
+  const [items, setItems] = useState<ReviewRow[]>([]);
+  const [services, setServices] = useState<Array<{ id: string; name: string }>>([]);
+  const [serviceFilter, setServiceFilter] = useState("");
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
 
   const loadReviews = useCallback(async () => {
     try {
-      const res = await api<{ results?: typeof items }>("/admin/reviews/");
+      const params = new URLSearchParams();
+      if (serviceFilter) params.set("service_id", serviceFilter);
+      const res = await api<{ results?: ReviewRow[] }>(`/admin/reviews/?${params}`);
       setItems(res.results ?? []);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not load reviews.");
     }
-  }, []);
+  }, [serviceFilter]);
 
   useEffect(() => {
     void loadReviews();
   }, [loadReviews]);
+
+  useEffect(() => {
+    api<{ services: Array<{ id: string; name: string }> }>("/catalog/")
+      .then((result) => setServices(result.services ?? []))
+      .catch(() => setErr("Could not load the service list."));
+  }, []);
+
+  const saveManual = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setErr("");
+    setNotice("");
+    try {
+      await api(editingId ? `/admin/reviews/${editingId}/` : "/admin/reviews/", editingId ? "PATCH" : "POST", form);
+      setNotice(editingId ? "Manual review updated." : form.is_visible ? "Manual review published." : "Manual review saved as hidden.");
+      setForm(emptyForm);
+      setEditingId(null);
+      setShowForm(false);
+      await loadReviews();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save review.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const togglePublic = async (id: string, current: boolean) => {
     setBusy(true);
@@ -1051,16 +1086,29 @@ function ReviewsManager() {
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-bold text-slate-900">Customer Reviews Moderation</h2>
-      <p className="text-xs text-slate-500 mb-4">Moderate customer reviews from completed bookings and control storefront visibility.</p>
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div><h2 className="text-base font-bold text-slate-900">Service reviews</h2><p className="mt-1 text-xs text-slate-500">Moderate booking reviews or add a review supplied outside the booking flow.</p></div>
+        {canCreate && <button type="button" onClick={() => { setShowForm(!showForm); setEditingId(null); setForm(emptyForm); setErr(""); }} className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white hover:bg-teal-800">{showForm ? "Cancel" : "Add review manually"}</button>}
+      </div>
       {err && <div className="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-800">{err}</div>}
+      {notice && <div role="status" className="mb-3 rounded-lg bg-emerald-50 p-3 text-xs text-emerald-800">{notice}</div>}
+      {showForm && canCreate && <form onSubmit={(event) => void saveManual(event)} className="mb-5 grid gap-3 rounded-xl border border-teal-200 bg-teal-50/40 p-4 sm:grid-cols-2">
+        <div className="sm:col-span-2"><h3 className="text-sm font-bold text-slate-900">{editingId ? "Edit manual review" : "Add manual review"}</h3><p className="mt-1 text-xs text-slate-600">Use a review you have permission to publish. Admin added reviews are identified separately from booking reviews.</p></div>
+        <label className="text-xs font-bold text-slate-700">Service<select required value={form.service_id} onChange={(e) => setForm({ ...form, service_id: e.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"><option value="">Select a service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+        <label className="text-xs font-bold text-slate-700">Reviewer name<input required minLength={2} maxLength={100} value={form.reviewer_name} onChange={(e) => setForm({ ...form, reviewer_name: e.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm" /></label>
+        <label className="text-xs font-bold text-slate-700">Rating<select value={form.rating} onChange={(e) => setForm({ ...form, rating: Number(e.target.value) })} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm">{[5, 4, 3, 2, 1].map((rating) => <option key={rating} value={rating}>{rating} stars</option>)}</select></label>
+        <label className="flex items-center gap-2 self-end text-xs font-semibold text-slate-700"><input type="checkbox" checked={form.is_visible} onChange={(e) => setForm({ ...form, is_visible: e.target.checked })} /> Publish on the website now</label>
+        <label className="text-xs font-bold text-slate-700 sm:col-span-2">Review<textarea required minLength={10} maxLength={2000} rows={4} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm" /></label>
+        <div className="sm:col-span-2"><button disabled={busy || services.length === 0} className="rounded-lg bg-teal-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{busy ? "Saving..." : editingId ? "Save review" : "Add review"}</button></div>
+      </form>}
+      <label className="mb-4 block max-w-xs text-xs font-bold text-slate-700">Filter by service<select value={serviceFilter} onChange={(e) => setServiceFilter(e.target.value)} className="mt-1 block w-full rounded-lg border border-slate-300 bg-white p-2 text-sm"><option value="">All services</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-100 text-left uppercase text-slate-500 font-bold">
               <th className="p-3">Booking Ref</th>
               <th className="p-3">Service</th>
-              <th className="p-3">Customer</th>
+              <th className="p-3">Reviewer</th>
               <th className="p-3">Rating</th>
               <th className="p-3">Review</th>
               <th className="p-3">Public Status</th>
@@ -1070,13 +1118,13 @@ function ReviewsManager() {
           <tbody className="divide-y divide-slate-100">
             {items.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-6 text-center text-slate-400">No customer reviews submitted yet.</td>
+                <td colSpan={7} className="p-6 text-center text-slate-400">No reviews found for this service.</td>
               </tr>
             ) : items.map((r) => (
               <tr key={r.id} className="hover:bg-slate-50">
-                <td className="p-3 font-bold text-slate-900">{r.booking_reference}</td>
+                <td className="p-3 font-bold text-slate-900">{r.booking_reference || "Admin added"}</td>
                 <td className="p-3 text-slate-700">{r.service}</td>
-                <td className="p-3 text-slate-600">{r.customer_phone}</td>
+                <td className="p-3 text-slate-600">{r.reviewer_name}<span className="block text-[11px] text-slate-400">{r.source === "MANUAL" ? "Admin added" : r.customer_phone}</span></td>
                 <td className="p-3 text-amber-500 font-bold">{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</td>
                 <td className="p-3 max-w-sm text-slate-600">{r.comment || "—"}</td>
                 <td className="p-3">
@@ -1087,6 +1135,7 @@ function ReviewsManager() {
                   )}
                 </td>
                 <td className="p-3">
+                  {r.source === "MANUAL" && canCreate && <button type="button" disabled={busy} onClick={() => { setEditingId(r.id); setForm({ service_id: r.service_id, reviewer_name: r.reviewer_name, rating: r.rating, comment: r.comment, is_visible: r.is_visible }); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="mr-2 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50">Edit</button>}
                   <button
                     disabled={busy}
                     onClick={() => void togglePublic(r.id, r.is_visible)}

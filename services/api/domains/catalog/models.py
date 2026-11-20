@@ -71,6 +71,7 @@ class Service(UUIDStampedModel):
     landing_thumbnail = models.ImageField(upload_to="services/landing-thumbnails/", blank=True, null=True)
     popup_cover_image = models.ImageField(upload_to="services/popup-covers/", blank=True, null=True)
     popup_content_image = models.ImageField(upload_to="services/popup-content/", blank=True, null=True)
+    brands_image = models.ImageField(upload_to="services/brands/", blank=True, null=True)
     list_image = models.ImageField(upload_to="services/list-images/", blank=True, null=True)
 
     # URL overrides for Cloudinary or external image URLs
@@ -78,6 +79,7 @@ class Service(UUIDStampedModel):
     landing_thumbnail_url = models.URLField(max_length=500, blank=True, default="")
     popup_cover_image_url = models.URLField(max_length=500, blank=True, default="")
     popup_content_image_url = models.URLField(max_length=500, blank=True, default="")
+    brands_image_url = models.URLField(max_length=500, blank=True, default="")
     list_image_url = models.URLField(max_length=500, blank=True, default="")
 
     is_active = models.BooleanField(default=True)
@@ -140,6 +142,10 @@ class Service(UUIDStampedModel):
     @property
     def popup_content_image_display(self):
         return self.get_image_url("popup_content_image")
+
+    @property
+    def brands_image_display(self):
+        return self.get_image_url("brands_image")
 
     @property
     def list_image_display(self):
@@ -258,9 +264,11 @@ class HomepageBanner(UUIDStampedModel):
 
 
 class Review(UUIDStampedModel):
-    booking = models.OneToOneField("bookings.Booking", on_delete=models.PROTECT, related_name="review")
+    booking = models.OneToOneField("bookings.Booking", on_delete=models.PROTECT, related_name="review", null=True, blank=True)
     service = models.ForeignKey(Service, on_delete=models.PROTECT, related_name="reviews")
-    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reviews")
+    customer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="reviews", null=True, blank=True)
+    source = models.CharField(max_length=12, choices=[("BOOKING", "Booking"), ("MANUAL", "Admin added")], default="BOOKING")
+    manual_reviewer_name = models.CharField(max_length=100, blank=True, default="")
     technician = models.ForeignKey("technicians.TechnicianProfile", on_delete=models.PROTECT, null=True, blank=True, related_name="reviews")
     rating = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField(max_length=2000, blank=True, default="")
