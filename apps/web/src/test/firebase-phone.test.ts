@@ -25,9 +25,14 @@ describe("customer Firebase phone verification", () => {
     vi.stubEnv("NEXT_PUBLIC_FIREBASE_PROJECT_ID", "test-project");
     document.body.innerHTML = '<div id="captcha" />';
     const confirm = vi.fn(async () => ({ user: { getIdToken: async () => "verified-id-token" } }));
+    const verifierArguments: unknown[][] = [];
+    class RecaptchaVerifier {
+      constructor(...args: unknown[]) { verifierArguments.push(args); }
+      clear() {}
+    }
     const auth = Object.assign(
       vi.fn(() => ({ signInWithPhoneNumber: async () => ({ confirm }) })),
-      { RecaptchaVerifier: class { clear() {} } },
+      { RecaptchaVerifier },
     );
     (window as Window & { firebase?: unknown }).firebase = {
       apps: [], initializeApp: vi.fn(), auth,
@@ -35,6 +40,8 @@ describe("customer Firebase phone verification", () => {
     const { sendPhoneVerificationCode, confirmPhoneVerificationCode } = await import("@/lib/firebase");
 
     await expect(sendPhoneVerificationCode("+919876543210", "captcha")).resolves.toMatchObject({ devMode: false });
+    expect(verifierArguments[0]).toHaveLength(2);
+    expect(verifierArguments[0][0]).toBe("captcha");
     await expect(confirmPhoneVerificationCode("+919876543211", "123456")).rejects.toThrow("this number");
     await expect(confirmPhoneVerificationCode("+919876543210", "123456")).resolves.toBe("verified-id-token");
     expect(confirm).toHaveBeenCalledWith("123456");

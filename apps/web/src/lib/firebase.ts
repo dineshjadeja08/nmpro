@@ -32,7 +32,7 @@ type FirebaseWindow = Window & {
       (): {
         signInWithPhoneNumber: (phone: string, verifier: unknown) => Promise<FirebaseConfirmationResult>;
       };
-      RecaptchaVerifier: new (container: string, options: Record<string, unknown>, auth?: unknown) => {
+      RecaptchaVerifier: new (container: string, options: Record<string, unknown>) => {
         clear?: () => void;
       };
     };
@@ -115,8 +115,7 @@ export async function sendPhoneVerificationCode(
       recaptchaContainerId,
       {
         size: "invisible",
-      },
-      auth
+      }
     );
     recaptchaVerifierHolder = verifier;
 
