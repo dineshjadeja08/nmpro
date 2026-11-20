@@ -249,7 +249,7 @@ class FAQ(UUIDStampedModel):
 
 
 class HomepageBanner(UUIDStampedModel):
-    PLACEMENT_CHOICES = [("HERO", "Hero"), ("MAIN", "Main"), ("CATEGORY", "Category"), ("SERVICE", "Service"), ("PROMO", "Promo")]
+    PLACEMENT_CHOICES = [("HERO", "Hero"), ("MAIN", "Main"), ("CATEGORY", "Category"), ("SERVICE", "Service"), ("PROMO", "Promo"), ("SPOTLIGHT", "In the spotlight")]
     title = models.CharField(max_length=160)
     subtitle = models.CharField(max_length=300, blank=True, default="")
     placement = models.CharField(max_length=20, choices=PLACEMENT_CHOICES, default="HERO")

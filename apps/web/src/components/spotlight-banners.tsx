@@ -1,39 +1,28 @@
 "use client";
 
-import type { Service, ServiceCategory } from "@nammapros/types";
+import type { HomepageBannerItem, Service, ServiceCategory } from "@nammapros/types";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { HOME_TILES, SubSheet, useResolver, type Target, type Tile } from "@/components/home-category-grid";
 
-/**
- * "In the spotlight" banner row on the home page, three at a time with arrows on both sides.
- * A banner opens its service or category. "popup" banners open a home tile's pop-up (e.g. Handyman).
- * When a banner's service isn't in the catalogue yet, it opens the fallback pop-up instead.
- */
-type Banner = { key: string; image: string; alt: string; target?: Target; popup?: string };
-
-const SPOT = (name: string) => `/images/spotlight/${name}.webp`;
-
-const BANNERS: Banner[] = [
-  { key: "ac", image: SPOT("ac-service"), alt: "AC service: keep your AC cool and efficient. Book now", target: { kind: "category", slug: "ac" } },
-  { key: "handyman", image: SPOT("handyman"), alt: "Electrician, plumber and carpenter services. Book now", popup: "handyman" },
-  { key: "bathroom", image: SPOT("bathroom-cleaning"), alt: "Bathroom cleaning: bring back your bathroom's shine. Book now", target: { kind: "service", slug: "bathroom-cleaning" }, popup: "deep-cleaning" },
-  { key: "washing-machine", image: SPOT("washing-machine"), alt: "Washing machine service and repair. Book now", target: { kind: "category", slug: "washing-machine" } },
-  { key: "sofa", image: SPOT("sofa-cleaning"), alt: "Sofa cleaning: deep clean your sofa. Book now", target: { kind: "category", slug: "sofa" } },
-  { key: "kitchen", image: SPOT("kitchen-cleaning"), alt: "Kitchen cleaning: deep clean your kitchen. Book now", target: { kind: "service", slug: "kitchen-cleaning" }, popup: "deep-cleaning" },
-];
-
-export function SpotlightBanners({ categories, services }: { categories: ServiceCategory[]; services: Service[] }) {
+export function SpotlightBanners({ categories, services, banners }: { categories: ServiceCategory[]; services: Service[]; banners: HomepageBannerItem[] }) {
   const resolve = useResolver(categories, services);
   const [sheet, setSheet] = useState<Tile | null>(null);
   const closeSheet = useCallback(() => setSheet(null), []);
-  const items = BANNERS.map((b) => ({
-    ...b,
-    href: b.target ? resolve(b.target) : null,
-    tile: b.popup ? HOME_TILES.find((t) => t.key === b.popup) ?? null : null,
-  })).filter((b) => b.href || b.tile);
+  const items = banners.map((b) => {
+    const target = b.target_url || "";
+    const [kind, slug] = target.split(":", 2);
+    const resolvedTarget: Target | null = kind === "category" || kind === "service" ? { kind, slug } : null;
+    return {
+      key: b.id,
+      image: b.desktop_image_url || b.mobile_image_url || "",
+      alt: b.title,
+      href: resolvedTarget ? resolve(resolvedTarget) : target.startsWith("/") && !target.startsWith("//") ? target : null,
+      tile: kind === "popup" ? HOME_TILES.find((t) => t.key === slug) ?? null : null,
+    };
+  }).filter((b) => b.image && (b.href || b.tile));
 
   const rowRef = useRef<HTMLUListElement>(null);
   const [edges, setEdges] = useState({ start: true, end: false });
@@ -64,7 +53,7 @@ export function SpotlightBanners({ categories, services }: { categories: Service
 
   if (items.length === 0) return null;
 
-  const picture = (b: Banner) => (
+  const picture = (b: (typeof items)[number]) => (
     <Image src={b.image} alt={b.alt} width={788} height={442} unoptimized
       className="aspect-[788/442] h-auto w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100" />
   );

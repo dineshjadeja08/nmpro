@@ -69,7 +69,7 @@ export default async function Home() {
       </section>
 
       {/* 2. Spotlight banners (each opens its service) */}
-      <SpotlightBanners categories={data?.categories ?? []} services={services} />
+      <SpotlightBanners categories={data?.categories ?? []} services={services} banners={data?.spotlight_banners ?? []} />
 
       {/* 4. Most booked services */}
       <MostBookedServices services={pickPopularServices(services, 5)} />

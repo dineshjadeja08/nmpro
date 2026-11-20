@@ -18,7 +18,7 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
-import { api, clearCsrf, Row } from "../lib/api";
+import { api, clearCsrf, uploadMultipart, Row } from "../lib/api";
 import Verification from "./verification";
 import AdminLeads from "./leads";
 import LeadZoneGrants from "./lead-zone-grants";
@@ -1291,13 +1291,18 @@ function FaqManager() {
 }
 
 function HomepageBannersManager() {
-  const [banners, setBanners] = useState<Array<{ id: string; title: string; subtitle: string; placement: string; desktop_image_url: string; target_url: string; is_active: boolean }>>([]);
+  type BannerRecord = { id: string; title: string; subtitle: string; placement: string; desktop_image_url: string; mobile_image_url: string; target_url: string; sort_order: number; is_active: boolean };
+  const [banners, setBanners] = useState<BannerRecord[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [titleVal, setTitleVal] = useState("");
   const [subtitleVal, setSubtitleVal] = useState("");
-  const [placement, setPlacement] = useState("HERO");
+  const [placement, setPlacement] = useState("SPOTLIGHT");
   const [imgUrl, setImgUrl] = useState("");
+  const [mobileImgUrl, setMobileImgUrl] = useState("");
   const [targetUrl, setTargetUrl] = useState("");
+  const [sortOrder, setSortOrder] = useState(0);
+  const [isActive, setIsActive] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
@@ -1314,6 +1319,21 @@ function HomepageBannersManager() {
     void loadBanners();
   }, [loadBanners]);
 
+  const uploadBannerImage = async (file: File) => {
+    setUploading(true);
+    setErr("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const result = await uploadMultipart<{ url: string }>("/admin/homepage-banners/images/", form);
+      setImgUrl(result.url);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not upload image.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const save = async () => {
     if (!titleVal.trim()) return;
     setBusy(true);
@@ -1324,8 +1344,10 @@ function HomepageBannersManager() {
         subtitle: subtitleVal.trim(),
         placement,
         desktop_image_url: imgUrl.trim(),
+        mobile_image_url: mobileImgUrl.trim(),
         target_url: targetUrl.trim(),
-        is_active: true,
+        sort_order: sortOrder,
+        is_active: isActive,
       };
       if (editingId) {
         await api(`/admin/homepage-banners/${editingId}/`, "PATCH", payload);
@@ -1336,7 +1358,10 @@ function HomepageBannersManager() {
       setTitleVal("");
       setSubtitleVal("");
       setImgUrl("");
+      setMobileImgUrl("");
       setTargetUrl("");
+      setSortOrder(0);
+      setIsActive(true);
       await loadBanners();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save banner.");
@@ -1349,14 +1374,16 @@ function HomepageBannersManager() {
     <div className="space-y-6">
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-base font-bold text-slate-900">Homepage Banners</h2>
-        <p className="text-xs text-slate-500 mb-4">Manage hero, promo, and category banners displayed on the website.</p>
+        <p className="text-xs text-slate-500 mb-4">In the spotlight banners appear in the homepage image row. Upload artwork, choose a destination, and set their display order.</p>
         {err && <div className="mb-3 rounded-lg bg-red-50 p-3 text-xs text-red-800">{err}</div>}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {banners.map((b) => (
+          {[...banners].sort((a, b) => Number(b.placement === "SPOTLIGHT") - Number(a.placement === "SPOTLIGHT") || a.sort_order - b.sort_order).map((b) => (
             <div key={b.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between gap-3">
               <div>
                 <span className="rounded bg-teal-100 px-2 py-0.5 text-[10px] font-bold text-teal-900">{b.placement}</span>
+                <span className="ml-2 text-[10px] text-slate-500">Order {b.sort_order}</span>
                 <strong className="mt-2 block text-sm font-bold text-slate-900">{b.title}</strong>
+                {b.desktop_image_url && <img src={b.desktop_image_url} alt={b.title} className="mt-2 aspect-[788/442] w-full rounded-lg object-cover" />}
                 {b.subtitle ? <p className="mt-1 text-xs text-slate-600">{b.subtitle}</p> : null}
                 {b.desktop_image_url ? <p className="mt-1 truncate text-[11px] font-mono text-slate-500">{b.desktop_image_url}</p> : null}
               </div>
@@ -1377,7 +1404,10 @@ function HomepageBannersManager() {
                     setSubtitleVal(b.subtitle);
                     setPlacement(b.placement);
                     setImgUrl(b.desktop_image_url);
+                    setMobileImgUrl(b.mobile_image_url || "");
                     setTargetUrl(b.target_url);
+                    setSortOrder(b.sort_order);
+                    setIsActive(b.is_active);
                   }}
                   className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700"
                 >
@@ -1405,18 +1435,32 @@ function HomepageBannersManager() {
           <input value={titleVal} onChange={(e) => setTitleVal(e.target.value)} placeholder="Banner Title *" className="w-full rounded-lg border border-slate-300 p-2 text-sm" />
           <input value={subtitleVal} onChange={(e) => setSubtitleVal(e.target.value)} placeholder="Subtitle" className="w-full rounded-lg border border-slate-300 p-2 text-sm" />
           <select value={placement} onChange={(e) => setPlacement(e.target.value)} className="w-full rounded-lg border border-slate-300 p-2 text-sm">
-            <option value="HERO">HERO</option>
-            <option value="MID_PROMO">MID_PROMO</option>
-            <option value="CATEGORY_STRIP">CATEGORY_STRIP</option>
+            <option value="SPOTLIGHT">In the spotlight</option>
+            <option value="HERO">Hero</option>
+            <option value="MAIN">Main</option>
+            <option value="CATEGORY">Category</option>
+            <option value="SERVICE">Service</option>
+            <option value="PROMO">Promo</option>
           </select>
+          <label className="block text-xs font-semibold text-slate-700">Upload banner image (JPG, PNG or WebP, up to 5 MB)
+            <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadBannerImage(file); e.target.value = ""; }} className="mt-1 block w-full text-xs" />
+          </label>
+          {uploading && <p className="text-xs text-teal-700">Uploading image...</p>}
           <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="Desktop Image URL" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
+          {imgUrl && <img src={imgUrl} alt="Banner preview" className="aspect-[788/442] w-full rounded-lg object-cover" />}
+          <input value={mobileImgUrl} onChange={(e) => setMobileImgUrl(e.target.value)} placeholder="Mobile image URL (optional)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
           <input value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} placeholder="Target link (e.g. /services/ac-service)" className="w-full rounded-lg border border-slate-300 p-2 text-xs font-mono" />
+          {placement === "SPOTLIGHT" && <p className="text-xs text-slate-500">Destination examples: <code>category:ac</code>, <code>service:bathroom-cleaning</code>, <code>popup:handyman</code>, or a site path such as <code>/services</code>.</p>}
+          <label className="block text-xs font-semibold text-slate-700">Display order
+            <input type="number" min={0} max={65535} value={sortOrder} onChange={(e) => setSortOrder(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm" />
+          </label>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Visible on website</label>
           <div className="flex gap-2">
-            <button disabled={busy || !titleVal.trim()} onClick={() => void save()} className="rounded-lg bg-teal-700 px-5 py-2 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-50">
+            <button disabled={busy || uploading || !titleVal.trim() || (placement === "SPOTLIGHT" && (!imgUrl.trim() || !targetUrl.trim()))} onClick={() => void save()} className="rounded-lg bg-teal-700 px-5 py-2 text-xs font-bold text-white hover:bg-teal-800 disabled:opacity-50">
               {editingId ? "Update Banner" : "Create Banner"}
             </button>
             {editingId && (
-              <button onClick={() => { setEditingId(null); setTitleVal(""); setSubtitleVal(""); setImgUrl(""); setTargetUrl(""); }} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">
+              <button onClick={() => { setEditingId(null); setTitleVal(""); setSubtitleVal(""); setImgUrl(""); setMobileImgUrl(""); setTargetUrl(""); setSortOrder(0); setIsActive(true); }} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700">
                 Cancel
               </button>
             )}

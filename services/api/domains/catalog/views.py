@@ -162,7 +162,8 @@ class CatalogView(APIView):
         ).order_by("-created_at")
         review_agg = reviews_qs.aggregate(average_rating=Avg("rating"), review_count=Count("id"))
         completed_homes = Booking.objects.filter(status__in=["COMPLETED", "CLOSED"]).count()
-        banners = HomepageBanner.objects.filter(is_active=True).order_by("sort_order", "created_at")[:6]
+        banners = HomepageBanner.objects.filter(is_active=True).exclude(placement="SPOTLIGHT").order_by("sort_order", "created_at")[:6]
+        spotlight_banners = HomepageBanner.objects.filter(is_active=True, placement="SPOTLIGHT").order_by("sort_order", "created_at")[:12]
         return Response({
             "categories": [serialize_category(c) for c in categories],
             "services": [serialize_service(s, zone) for s in services],
@@ -178,6 +179,12 @@ class CatalogView(APIView):
                     "target_url": b.target_url,
                 }
                 for b in banners
+            ],
+            "spotlight_banners": [
+                {"id": str(b.id), "title": b.title, "desktop_image_url": b.desktop_image_url,
+                 "mobile_image_url": b.mobile_image_url, "target_url": b.target_url,
+                 "sort_order": b.sort_order}
+                for b in spotlight_banners
             ],
             "trust_stats": {
                 "average_rating": round(review_agg["average_rating"], 1) if review_agg["average_rating"] else None,

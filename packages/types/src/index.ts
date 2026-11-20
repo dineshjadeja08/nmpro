@@ -152,6 +152,7 @@ export interface CatalogResponse {
   services: Service[];
   reviews?: PublicReview[];
   banners?: HomepageBannerItem[];
+  spotlight_banners?: HomepageBannerItem[];
   trust_stats?: TrustStats;
   demo: boolean;
 }

@@ -2,6 +2,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -181,6 +182,32 @@ def banner_data(b):
             "target_url": b.target_url, "sort_order": b.sort_order, "is_active": b.is_active}
 
 
+def validate_spotlight_fields(data, placement):
+    if placement != "SPOTLIGHT":
+        return
+    image = str(data.get("desktop_image_url") or "").strip()
+    target = str(data.get("target_url") or "").strip()
+    if not image.startswith(("https://", "/images/")):
+        raise serializers.ValidationError({"desktop_image_url": "Upload an image or enter an HTTPS image URL."})
+    if not (target.startswith("/") and not target.startswith("//") or
+            target.startswith(("category:", "service:", "popup:"))):
+        raise serializers.ValidationError({"target_url": "Use a site path, category:slug, service:slug, or popup:handyman."})
+
+
+class AdminHomepageBannerImageView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        require(request.user, "MANAGE_SERVICES")
+        from domains.administration.views_core import _validate_and_upload_catalog_image
+
+        _, _, uploaded = _validate_and_upload_catalog_image(request)
+        if not uploaded or not uploaded.get("secure_url"):
+            raise serializers.ValidationError("Cloudinary image storage is unavailable.")
+        return Response({"url": uploaded["secure_url"]}, status=201)
+
+
 class AdminHomepageBannersView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -191,10 +218,12 @@ class AdminHomepageBannersView(APIView):
     def post(self, request):
         require(request.user, "MANAGE_SERVICES")
         title = serializers.CharField(max_length=160).run_validation(request.data.get("title"))
+        placement = serializers.ChoiceField(choices=[c[0] for c in HomepageBanner.PLACEMENT_CHOICES]).run_validation(request.data.get("placement", "HERO"))
+        validate_spotlight_fields(request.data, placement)
         banner = HomepageBanner.objects.create(
             title=title,
             subtitle=request.data.get("subtitle", ""),
-            placement=serializers.ChoiceField(choices=[c[0] for c in HomepageBanner.PLACEMENT_CHOICES]).run_validation(request.data.get("placement", "HERO")),
+            placement=placement,
             desktop_image_url=request.data.get("desktop_image_url", ""),
             mobile_image_url=request.data.get("mobile_image_url", ""),
             target_url=request.data.get("target_url", ""),
@@ -211,6 +240,9 @@ class AdminHomepageBannerDetailView(APIView):
     def patch(self, request, banner_id):
         require(request.user, "MANAGE_SERVICES")
         banner = get_object_or_404(HomepageBanner, id=banner_id)
+        merged = {field: request.data.get(field, getattr(banner, field)) for field in ("desktop_image_url", "target_url")}
+        placement = serializers.ChoiceField(choices=[c[0] for c in HomepageBanner.PLACEMENT_CHOICES]).run_validation(request.data.get("placement", banner.placement))
+        validate_spotlight_fields(merged, placement)
         for field in ("title", "subtitle", "placement", "desktop_image_url", "mobile_image_url", "target_url", "sort_order", "is_active"):
             if field in request.data:
                 setattr(banner, field, request.data[field])

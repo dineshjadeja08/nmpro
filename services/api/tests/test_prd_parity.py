@@ -126,7 +126,31 @@ def test_catalogue_seo_blog_faq_banners_and_slug_redirect():
     assert len(APIClient().get("/api/v1/faqs/", {"service_id": str(svc.id)}).json()["results"]) == 1
 
     assert c.post("/api/v1/admin/homepage-banners/", {"title": "Hero Offer", "placement": "HERO"}, format="json").status_code == 201
-    assert len(APIClient().get("/api/v1/homepage-banners/").json()["results"]) == 1
+    assert len(APIClient().get("/api/v1/homepage-banners/", {"placement": "HERO"}).json()["results"]) == 1
+
+
+@pytest.mark.django_db
+def test_spotlight_banners_are_editable_and_separate_from_offers():
+    admin = _make_admin("+919999990014")
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    public = APIClient()
+    initial = public.get("/api/v1/catalog/").json()
+    assert len(initial["spotlight_banners"]) == 6
+    assert initial["banners"] == []
+
+    banner_id = initial["spotlight_banners"][0]["id"]
+    edited = client.patch(f"/api/v1/admin/homepage-banners/{banner_id}/", {
+        "title": "Updated AC art", "sort_order": 9,
+        "desktop_image_url": "https://example.com/new-ac.webp",
+    }, format="json")
+    assert edited.status_code == 200, edited.content
+    updated = public.get("/api/v1/catalog/").json()["spotlight_banners"]
+    assert updated[-1]["title"] == "Updated AC art"
+    assert updated[-1]["desktop_image_url"] == "https://example.com/new-ac.webp"
+
+    assert client.patch(f"/api/v1/admin/homepage-banners/{banner_id}/", {"is_active": False}, format="json").status_code == 200
+    assert len(public.get("/api/v1/catalog/").json()["spotlight_banners"]) == 5
 
 
 @pytest.mark.django_db
