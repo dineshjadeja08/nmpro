@@ -8,6 +8,7 @@ import {
   ChevronsUpDown,
   Copy,
   Loader2,
+  LocateFixed,
   MapPin,
   Minus,
   Pencil,
@@ -287,6 +288,8 @@ function LeadAddressCombobox({
 }) {
   const [open, setOpen] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [locationError, setLocationError] = useState("");
   const [places, setPlaces] = useState<SuggestionItem[]>([]);
   const rootRef = useRef<HTMLDivElement>(null);
   const reqId = useRef(0);
@@ -349,7 +352,10 @@ function LeadAddressCombobox({
           }))
         );
       } catch {
-        if (reqId.current === current) setPlaces([]);
+        if (reqId.current === current) {
+          setPlaces([]);
+          setLocationError("Google address search is unavailable. Enter the address manually.");
+        }
       } finally {
         if (reqId.current === current) setSearching(false);
       }
@@ -372,6 +378,7 @@ function LeadAddressCombobox({
 
   const pick = async (item: SuggestionItem) => {
     setSearching(true);
+    setLocationError("");
     try {
       let placeId = item.id;
       if (item.sourceKind === "zone") {
@@ -409,18 +416,54 @@ function LeadAddressCombobox({
         });
       }
     } catch {
-      onResolve({
-        address: item.description,
-        city: item.city || "Chennai",
-        area: item.locality || item.main_text,
-        pincode: item.postal_code || "",
-        latitude: null,
-        longitude: null,
-      });
+      setLocationError("Could not resolve this address. Try another suggestion or enter it manually.");
     } finally {
       setSearching(false);
       setOpen(false);
     }
+  };
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("This browser cannot detect a location. Search for an address instead.");
+      return;
+    }
+    setDetecting(true);
+    setLocationError("");
+    navigator.geolocation.getCurrentPosition(
+      async ({ coords }) => {
+        try {
+          const lat = roundCoord(coords.latitude);
+          const lng = roundCoord(coords.longitude);
+          const resolved = await api<{
+            formatted_address?: string;
+            city?: string;
+            locality?: string;
+            postal_code?: string;
+            latitude?: number | null;
+            longitude?: number | null;
+          }>(`/location/reverse-geocode/?lat=${lat}&lng=${lng}`);
+          onResolve({
+            address: resolved.formatted_address || "",
+            city: resolved.city || "",
+            area: resolved.locality || "",
+            pincode: resolved.postal_code || "",
+            latitude: roundCoord(resolved.latitude ?? lat),
+            longitude: roundCoord(resolved.longitude ?? lng),
+          });
+          setOpen(false);
+        } catch {
+          setLocationError("Could not resolve this location. Search for an address instead.");
+        } finally {
+          setDetecting(false);
+        }
+      },
+      () => {
+        setLocationError("Location permission was denied. Search for an address instead.");
+        setDetecting(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
 
   return (
@@ -438,6 +481,7 @@ function LeadAddressCombobox({
           onChange={(e) => {
             onChange(e.target.value);
             setOpen(true);
+            setLocationError("");
           }}
           placeholder="Start typing an address"
           autoComplete="off"
@@ -447,6 +491,13 @@ function LeadAddressCombobox({
           <Loader2 className="absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-teal-700" />
         )}
       </div>
+
+      <button type="button" onClick={detectLocation} disabled={detecting}
+        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-teal-700 hover:text-teal-900 disabled:opacity-50">
+        {detecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LocateFixed className="h-3.5 w-3.5" />}
+        {detecting ? "Detecting location..." : "Use current location"}
+      </button>
+      {locationError && <p role="alert" className="mt-1 text-xs text-red-600">{locationError}</p>}
 
       {open && combined.length > 0 && (
         <div className="absolute inset-x-0 top-full z-40 mt-1.5 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
@@ -664,6 +715,8 @@ export function AdminLeadCreateScreen({
                 zones={zones}
                 onChange={(val) => {
                   setAddress(val);
+                  setLatitude(null);
+                  setLongitude(null);
                   if (!val.trim()) {
                     setPincode("");
                     setArea("");
@@ -1182,7 +1235,7 @@ export function AdminLeadDetailWorkspace({
                 <LeadAddressCombobox
                   value={editValues.address}
                   zones={zones}
-                  onChange={(address) => setEditValues({ ...editValues, address })}
+                  onChange={(address) => setEditValues({ ...editValues, address, latitude: null, longitude: null })}
                   onResolve={(r) =>
                     setEditValues({
                       ...editValues,

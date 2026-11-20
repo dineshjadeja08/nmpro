@@ -20,3 +20,6 @@ env:
   - variable: NEXT_PUBLIC_FIREBASE_PROJECT_ID
     value: nammapro-api
     availability: [BUILD, RUNTIME]
+  - variable: NEXT_PUBLIC_FIREBASE_APP_ID
+    value: "1:177323361322:web:0237be1b48b67546b06f53"
+    availability: [BUILD, RUNTIME]

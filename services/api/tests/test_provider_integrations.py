@@ -2,11 +2,25 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
+from django.test import override_settings
 from rest_framework.test import APIClient
 
 from domains.bookings.models import AppointmentSlot, Booking
 from domains.catalog.models import Category, PricingRule, Service, ServicePackage
 from domains.locations.models import Address, City, ServiceCoverage, Zone
+from domains.locations.providers.google_maps import GoogleMapsLocationProvider, LocationProviderError
+
+
+@pytest.mark.parametrize("method,args", [
+    ("autocomplete", ("Anna Nagar",)),
+    ("geocode", ("mock_anna_nagar",)),
+    ("reverse_geocode", (13.085, 80.2101)),
+])
+@override_settings(ENVIRONMENT="production", GOOGLE_MAPS_API_KEY="")
+def test_production_location_lookup_never_returns_mock_data(method, args):
+    with pytest.raises(LocationProviderError) as exc:
+        getattr(GoogleMapsLocationProvider(), method)(*args)
+    assert exc.value.reason == "misconfigured"
 
 
 @pytest.fixture

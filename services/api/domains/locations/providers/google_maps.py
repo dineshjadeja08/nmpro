@@ -93,12 +93,17 @@ class GoogleMapsLocationProvider:
     def is_configured(self) -> bool:
         return bool(self.api_key)
 
+    def _require_key_in_managed_environment(self) -> None:
+        if not self.is_configured and getattr(settings, "ENVIRONMENT", "development") in {"staging", "production"}:
+            raise LocationProviderError("Address lookup is temporarily unavailable.", reason="misconfigured")
+
     def autocomplete(self, query: str, latitude: float | None = None, longitude: float | None = None, city: str = "") -> list[dict]:
         clean_query = query.strip()
         if not clean_query:
             return []
 
-        # Return mock predictions if not configured
+        self._require_key_in_managed_environment()
+        # Return mock predictions only for local development and tests.
         if not self.is_configured:
             q_lower = clean_query.lower()
             matches = [
@@ -172,7 +177,10 @@ class GoogleMapsLocationProvider:
         if not clean_id:
             raise LocationProviderError("Place ID is required.")
 
+        self._require_key_in_managed_environment()
         # Dev mock fallback
+        if clean_id.startswith("mock_") and getattr(settings, "ENVIRONMENT", "development") in {"staging", "production"}:
+            raise LocationProviderError("Place details not found.", reason="not_found")
         if not self.is_configured or clean_id.startswith("mock_"):
             selected = next((m for m in DEV_MOCK_SUGGESTIONS if m["id"] == clean_id), DEV_MOCK_SUGGESTIONS[0])
             return {
@@ -269,6 +277,7 @@ class GoogleMapsLocationProvider:
         return parsed
 
     def reverse_geocode(self, latitude: float, longitude: float) -> dict:
+        self._require_key_in_managed_environment()
         # Dev mock fallback
         if not self.is_configured:
             mock = DEV_MOCK_SUGGESTIONS[0]
