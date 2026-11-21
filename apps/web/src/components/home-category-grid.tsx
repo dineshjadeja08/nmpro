@@ -9,16 +9,14 @@ import { useServiceLocation } from "@/components/location-provider";
 import { categoryHref, serviceHref } from "@/lib/services";
 
 /**
- * Home page category tiles (3 columns). Each tile either opens a sheet of sub-services or links straight
- * to its category. Targets are matched against the live catalogue by slug; anything not in the catalogue yet
- * shows "Coming soon" and lights up automatically once staff add it in admin with that slug.
+ * Home page category tiles (3 columns). Each tile either opens a sheet of service categories or links straight
+ * to its category. Targets are matched against the live catalogue by slug.
  */
 export type Target = { kind: "category" | "service"; slug: string };
 type Sub = { label: string; target: Target; image?: string; icon?: LucideIcon };
 export type Tile = { key: string; label: string; image?: string; icon?: LucideIcon; subs?: Sub[]; target?: Target };
 
 const CAT = (slug: string): Target => ({ kind: "category", slug });
-const SVC = (slug: string): Target => ({ kind: "service", slug });
 /** Appliance pictures with the grey square removed (transparent copies of the category icons). */
 const IMG = (name: string) => `/images/home-icons/appliances/${name}.png`;
 /** NammaPros home and pop-up icons (transparent PNGs). */
@@ -28,17 +26,17 @@ export const HOME_TILES: Tile[] = [
   {
     key: "deep-cleaning", label: "Deep Cleaning", image: HOME("deep-cleaning"),
     subs: [
-      { label: "Bathroom Cleaning", target: SVC("bathroom-cleaning"), image: HOME("bathroom-cleaning") },
-      { label: "Kitchen Cleaning", target: SVC("kitchen-cleaning"), image: HOME("kitchen-cleaning") },
-      { label: "Full House Cleaning", target: SVC("full-house-cleaning"), image: HOME("full-house-cleaning") },
+      { label: "Bathroom Cleaning", target: CAT("bathroom-cleaning"), image: HOME("bathroom-cleaning") },
+      { label: "Kitchen Cleaning", target: CAT("kitchen-cleaning"), image: HOME("kitchen-cleaning") },
+      { label: "Full House Cleaning", target: CAT("full-house-cleaning"), image: HOME("full-house-cleaning") },
     ],
   },
   {
     key: "handyman", label: "Handyman", image: HOME("handyman"),
     subs: [
-      { label: "Electrician", target: SVC("electrician"), image: HOME("electrician") },
-      { label: "Plumber", target: SVC("plumber"), image: HOME("plumber") },
-      { label: "Carpenter", target: SVC("carpenter"), image: HOME("carpenter") },
+      { label: "Electrician", target: CAT("electrician"), image: HOME("electrician") },
+      { label: "Plumber", target: CAT("plumber"), image: HOME("plumber") },
+      { label: "Carpenter", target: CAT("carpenter"), image: HOME("carpenter") },
     ],
   },
   {
