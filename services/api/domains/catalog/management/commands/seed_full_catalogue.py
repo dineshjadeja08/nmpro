@@ -1152,8 +1152,9 @@ class Command(BaseCommand):
                             p_rule.save()
 
         # Deactivate any legacy/duplicate categories and services outside the canonical set
-        deactivated_cats = Category.objects.exclude(slug__in=canonical_category_slugs).update(is_active=False)
-        deactivated_svcs = Service.objects.exclude(slug__in=canonical_service_slugs).update(is_active=False)
+        # Electrician entries are maintained outside this legacy bootstrap list.
+        deactivated_cats = Category.objects.exclude(slug__in=[*canonical_category_slugs, "electrician"]).update(is_active=False)
+        deactivated_svcs = Service.objects.exclude(slug__in=canonical_service_slugs).exclude(category__slug="electrician").update(is_active=False)
 
         # Seed appointment slots for active packages across the next 7 days in bulk
         now = timezone.now()
