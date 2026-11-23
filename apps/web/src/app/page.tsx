@@ -6,20 +6,22 @@ import Image from "next/image";
 import { HomeCategoryGrid } from "@/components/home-category-grid";
 import { MostBookedServices } from "@/components/most-booked-services";
 import { OfferSpotlight } from "@/components/offer-spotlight";
-import { ServiceImage } from "@/components/service-image";
+import { RecentReviewsCarousel } from "@/components/recent-reviews-carousel";
 import { SpotlightBanners } from "@/components/spotlight-banners";
-import { getCatalog } from "@/lib/catalog";
-import { resolveUploadedMediaUrl } from "@/lib/service-images";
+import { api, getCatalog } from "@/lib/catalog";
 import { pickPopularServices } from "@/lib/services";
 
 export default async function Home() {
-  const { data } = await getCatalog();
+  const [{ data }, publicReviews] = await Promise.all([
+    getCatalog(),
+    api.publicReviews().catch(() => null),
+  ]);
   const services = data?.services ?? [];
   const acServices = services
     .filter((s) => s.is_active !== false && (s.category === "ac" || s.category === "air-conditioning"))
     .sort((a, b) => Number(Boolean(b.is_popular)) - Number(Boolean(a.is_popular)) || (a.sort_order ?? 0) - (b.sort_order ?? 0))
     .slice(0, 5);
-  const reviews = (data?.reviews ?? []).slice(0, 3);
+  const reviews = (publicReviews?.results ?? data?.reviews ?? []).slice(0, 15);
   const banners = data?.banners ?? [];
   const trust = data?.trust_stats;
 
@@ -78,49 +80,7 @@ export default async function Home() {
       <OfferSpotlight banners={banners} />
 
       {/* 6. From homes near you */}
-      {reviews.length > 0 && (
-        <section className="container py-10">
-          <h2 className="mb-5 font-serif text-2xl font-semibold text-[#1C1917] sm:text-3xl">From homes near you</h2>
-          <div className="grid gap-4 md:grid-cols-3">
-            {reviews.map((rev) => {
-              const initial = (rev.customer_name?.trim()[0] || "N").toUpperCase();
-              return (
-                <article
-                  key={rev.id}
-                  className="flex flex-col justify-between rounded-lg border border-[#EAE3DC] bg-white p-5 shadow-[0_4px_16px_rgba(28,25,23,0.03)]"
-                >
-                  <div>
-                    <div className="flex items-center gap-0.5 text-[#C8A35B]" aria-label={`${rev.rating} out of 5 stars`}>
-                      {Array.from({ length: rev.rating }).map((_, idx) => (
-                        <Star key={idx} size={13} className="fill-[#C8A35B] text-[#C8A35B]" />
-                      ))}
-                    </div>
-                    <p className="mt-3 text-xs leading-relaxed text-[#1C1917]">
-                      “{rev.comment || "Smooth visit, clear communication, and tidy finish."}”
-                    </p>
-                    {rev.photo_url && resolveUploadedMediaUrl(rev.photo_url) && (
-                      <div className="relative mt-3 aspect-[16/7] w-full overflow-hidden rounded-md bg-[#FAF6F2]">
-                        <ServiceImage src={rev.photo_url} alt={`Work done for ${rev.customer_name}`} fit="contain" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 flex items-center gap-2.5 border-t border-[#F4EFE9] pt-3">
-                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#F5E6EA] text-xs font-bold text-[#800020]">
-                      {initial}
-                    </span>
-                    <div className="min-w-0 text-[11px]">
-                      <strong className="block truncate text-[#1C1917]">{rev.customer_name}</strong>
-                      <span className="block truncate text-[#57534E]">
-                        {[rev.service_name, rev.area].filter(Boolean).join(" · ")}
-                      </span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <RecentReviewsCarousel reviews={reviews} />
 
       {/* 7. App download banner */}
       <section className="container pt-4 pb-10" aria-label="Get the NammaPros app">
