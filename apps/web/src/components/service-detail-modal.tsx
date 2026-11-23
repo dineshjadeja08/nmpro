@@ -257,7 +257,11 @@ export function ServiceDetailModal({ service: baseService, onClose, syncUrl = tr
             {packages.length > 1 && (
               <section aria-labelledby={`${titleId}-options`} className="space-y-2.5">
                 <h3 id={`${titleId}-options`} className="text-base font-bold text-[#1C1917]">
-                  {packages.every((p) => /inch/i.test(p.name)) ? "Choose your TV size" : "Choose an option"}
+                  {service.category === "water-tank-cleaning"
+                    ? "Choose your tank size"
+                    : packages.every((p) => /inch/i.test(p.name))
+                      ? "Choose your TV size"
+                      : "Choose an option"}
                 </h3>
                 <ul className="-mx-5 flex snap-x gap-3 overflow-x-auto scroll-px-5 px-5 pb-1 [scrollbar-width:thin] sm:-mx-6 sm:scroll-px-6 sm:px-6">
                   {packages.map((p, idx) => {
