@@ -22,6 +22,15 @@ const IMG = (name: string) => `/images/home-icons/appliances/${name}.png`;
 /** NammaPros home and pop-up icons (transparent PNGs). */
 const HOME = (name: string) => `/images/home-icons/${name}.png`;
 
+export const HANDYMAN_POPUP: Tile = {
+  key: "handyman", label: "Handyman", image: HOME("handyman"),
+  subs: [
+    { label: "Electrician", target: CAT("electrician"), image: HOME("electrician") },
+    { label: "Plumber", target: CAT("plumber"), image: HOME("plumber") },
+    { label: "Carpenter", target: CAT("carpenter"), image: HOME("carpenter") },
+  ],
+};
+
 export const HOME_TILES: Tile[] = [
   {
     key: "deep-cleaning", label: "Deep Cleaning", image: HOME("deep-cleaning"),
@@ -31,14 +40,9 @@ export const HOME_TILES: Tile[] = [
       { label: "Full House Cleaning", target: CAT("full-house-cleaning"), image: HOME("full-house-cleaning") },
     ],
   },
-  {
-    key: "handyman", label: "Handyman", image: HOME("handyman"),
-    subs: [
-      { label: "Electrician", target: CAT("electrician"), image: HOME("electrician") },
-      { label: "Plumber", target: CAT("plumber"), image: HOME("plumber") },
-      { label: "Carpenter", target: CAT("carpenter"), image: HOME("carpenter") },
-    ],
-  },
+  { key: "electrician", label: "Electrician", image: HOME("electrician"), target: CAT("electrician") },
+  { key: "plumber", label: "Plumber", image: HOME("plumber"), target: CAT("plumber") },
+  { key: "carpenter", label: "Carpenter", image: HOME("carpenter"), target: CAT("carpenter") },
   {
     key: "appliances", label: "Appliance Services", image: HOME("appliance-services"),
     subs: [
@@ -83,7 +87,7 @@ export function HomeCategoryGrid({ categories, services }: { categories: Service
 
   return (
     <>
-      <ul className="grid grid-cols-3 gap-x-3 gap-y-3 sm:gap-x-4 sm:gap-y-4">
+      <ul className="grid grid-cols-3 gap-x-3 gap-y-3 sm:grid-cols-4 sm:gap-x-4 sm:gap-y-4">
         {HOME_TILES.map((tile) => {
           const direct = tile.target ? resolve(tile.target) : null;
           const inner = (
