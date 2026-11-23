@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { HANDYMAN_POPUP, HOME_TILES, SubSheet, useResolver, type Target, type Tile } from "@/components/home-category-grid";
+import { HOME_TILES, SubSheet, useResolver, type Target, type Tile } from "@/components/home-category-grid";
 
 export function SpotlightBanners({ categories, services, banners }: { categories: ServiceCategory[]; services: Service[]; banners: HomepageBannerItem[] }) {
   const resolve = useResolver(categories, services);
@@ -20,7 +20,7 @@ export function SpotlightBanners({ categories, services, banners }: { categories
       image: b.desktop_image_url || b.mobile_image_url || "",
       alt: b.title,
       href: resolvedTarget ? resolve(resolvedTarget) : target.startsWith("/") && !target.startsWith("//") ? target : null,
-      tile: kind === "popup" ? HOME_TILES.find((t) => t.key === slug) ?? (slug === "handyman" ? HANDYMAN_POPUP : null) : null,
+      tile: kind === "popup" ? HOME_TILES.find((t) => t.key === slug) ?? null : null,
     };
   }).filter((b) => b.image && (b.href || b.tile));
 
