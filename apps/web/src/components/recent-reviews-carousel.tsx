@@ -90,7 +90,7 @@ export function RecentReviewsCarousel({ reviews }: { reviews: PublicReview[] }) 
         onPointerLeave={() => { pausedRef.current = false; }}
         onFocus={() => { pausedRef.current = true; }}
         onBlur={() => { pausedRef.current = false; }}
-        className="overflow-x-auto overscroll-x-contain pb-2 focus-visible:outline-2 focus-visible:outline-[#800020] [scrollbar-width:thin]"
+        className="overflow-x-auto overscroll-x-contain pb-2 focus-visible:outline-2 focus-visible:outline-[#800020] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <div className="flex w-max gap-4">
           {Array.from({ length: repeatCount }).map((_, groupIndex) => (
