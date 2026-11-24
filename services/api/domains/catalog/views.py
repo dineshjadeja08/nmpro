@@ -162,8 +162,9 @@ class CatalogView(APIView):
         ).order_by("-created_at")
         review_agg = reviews_qs.aggregate(average_rating=Avg("rating"), review_count=Count("id"))
         completed_homes = Booking.objects.filter(status__in=["COMPLETED", "CLOSED"]).count()
-        banners = HomepageBanner.objects.filter(is_active=True).exclude(placement="SPOTLIGHT").order_by("sort_order", "created_at")[:6]
+        banners = HomepageBanner.objects.filter(is_active=True).exclude(placement__in=("SPOTLIGHT", "APP_DOWNLOAD")).order_by("sort_order", "created_at")[:6]
         spotlight_banners = HomepageBanner.objects.filter(is_active=True, placement="SPOTLIGHT").order_by("sort_order", "created_at")[:12]
+        app_download_banner = HomepageBanner.objects.filter(is_active=True, placement="APP_DOWNLOAD").order_by("sort_order", "created_at").first()
         return Response({
             "categories": [serialize_category(c) for c in categories],
             "services": [serialize_service(s, zone) for s in services],
@@ -186,6 +187,12 @@ class CatalogView(APIView):
                  "sort_order": b.sort_order}
                 for b in spotlight_banners
             ],
+            "app_download_banner": ({
+                "id": str(app_download_banner.id), "title": app_download_banner.title,
+                "desktop_image_url": app_download_banner.desktop_image_url,
+                "mobile_image_url": app_download_banner.mobile_image_url,
+                "target_url": app_download_banner.target_url,
+            } if app_download_banner else None),
             "trust_stats": {
                 "average_rating": round(review_agg["average_rating"], 1) if review_agg["average_rating"] else None,
                 "review_count": review_agg["review_count"],

@@ -183,6 +183,14 @@ def banner_data(b):
 
 
 def validate_spotlight_fields(data, placement):
+    if placement == "APP_DOWNLOAD":
+        image = str(data.get("desktop_image_url") or "").strip()
+        if not image.startswith(("https://", "/images/")):
+            raise serializers.ValidationError({"desktop_image_url": "Upload a banner image or enter an HTTPS image URL."})
+        target = str(data.get("target_url") or "").strip()
+        if target and not (target.startswith("https://") or target.startswith("/") and not target.startswith("//")):
+            raise serializers.ValidationError({"target_url": "Use an HTTPS URL or a site path beginning with /."})
+        return
     if placement != "SPOTLIGHT":
         return
     image = str(data.get("desktop_image_url") or "").strip()
