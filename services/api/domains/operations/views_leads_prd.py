@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from domains.notifications.models import Notification
+from domains.payments.providers.razorpay import PaymentUnavailable
 
 from .models import LeadActivity
 from .services import log
@@ -101,6 +102,8 @@ class LeadPaymentLinkView(APIView):
     @transaction.atomic
     def post(self, request, lead_id):
         lead_access(request.user, edit=True)
+        if settings.RAZORPAY_ENABLED:
+            raise PaymentUnavailable("Lead payment links are not available yet.")
         lead = get_object_or_404(scoped_leads(request.user).select_for_update(), id=lead_id)
         channel = serializers.ChoiceField(choices=["SMS", "WHATSAPP"]).run_validation(request.data.get("channel", "SMS"))
         payment_scope = serializers.ChoiceField(choices=["FULL", "ADVANCE"]).run_validation(request.data.get("payment_scope", "FULL"))
@@ -111,8 +114,8 @@ class LeadPaymentLinkView(APIView):
         )
         if payment_scope == "ADVANCE":
             lead.advance_amount_paise = amount_paise
-        lead.payment_status = "LINK_SENT" if settings.RAZORPAY_ENABLED else "PENDING"
-        lead.payment_link_url = f"https://rzp.io/i/{lead.id.hex[:10]}" if settings.RAZORPAY_ENABLED else ""
+        lead.payment_status = "PENDING"
+        lead.payment_link_url = ""
         lead.last_activity_at = timezone.now()
         lead.save(update_fields=["advance_amount_paise", "payment_status", "payment_link_url", "last_activity_at", "updated_at"])
         LeadActivity.objects.create(lead=lead, actor=request.user, kind="PAYMENT_LINK_ATTEMPTED",
@@ -122,7 +125,7 @@ class LeadPaymentLinkView(APIView):
             "id": str(lead.id),
             "payment_status": lead.payment_status,
             "payment_link_url": lead.payment_link_url,
-            "payment_delivery_status": "DISPATCHED" if settings.RAZORPAY_ENABLED else "BLOCKED_CONFIGURATION",
+            "payment_delivery_status": "BLOCKED_CONFIGURATION",
         })
 
 
