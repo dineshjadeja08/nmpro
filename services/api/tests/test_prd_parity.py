@@ -197,6 +197,12 @@ def test_service_area_unconfigured_closure_cart_start_otp_review_work_order_and_
         "package_id": str(pkg.id), "zone_id": str(zone.id), "base_paise": 39900, "fee_paise": 5000, "is_active": True,
     }, format="json")
     assert pr_patch.status_code == 200 and pr_patch.json()["fee_paise"] == 5000
+    service_prices = admin_client.get("/api/v1/admin/pricing/", {"service_id": str(svc.id)})
+    assert service_prices.status_code == 200
+    assert service_prices.json()["count"] == 1
+    assert service_prices.json()["results"][0]["id"] == pr_patch.json()["id"]
+    assert service_prices.json()["results"][0]["package_name"] == "Basic Tap Repair"
+    assert service_prices.json()["results"][0]["zone_name"] == "Adyar"
     faq = admin_client.post("/api/v1/admin/faqs/", {"question": "Warranty?", "answer": "30 days"}, format="json")
     assert faq.status_code == 201
     assert admin_client.patch(f"/api/v1/admin/faqs/{faq.json()['id']}/", {"is_active": False}, format="json").status_code == 200

@@ -151,6 +151,8 @@ def package_data(p):
 
 def price_data(p):
     return {"id": str(p.id), "package_id": str(p.package_id), "zone_id": str(p.zone_id),
+            "service_id": str(p.package.service_id), "package_name": p.package.name,
+            "zone_name": p.zone.name,
             "base_paise": p.base_paise, "inspection_paise": p.inspection_paise,
             "fee_paise": p.fee_paise, "tax_paise": p.tax_paise, "currency": p.currency,
             "payment_policy": p.payment_policy, "advance_type": p.advance_type,
@@ -1063,6 +1065,9 @@ class AdminPricingView(APIView):
     def get(self, request):
         require(request.user, "VIEW_ADMIN")
         qs = PricingRule.objects.select_related("package", "zone").order_by("-created_at")
+        if request.query_params.get("service_id"):
+            service_id = serializers.UUIDField().run_validation(request.query_params["service_id"])
+            qs = qs.filter(package__service_id=service_id, is_active=True)
         return paged(request, qs, price_data)
 
     def post(self, request):
