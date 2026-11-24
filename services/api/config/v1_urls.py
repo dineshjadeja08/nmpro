@@ -8,6 +8,7 @@ from domains.administration.views_core import (
     AdminCategoryImageView, AdminServiceImageView, AdminServiceImageDetailView, AdminPricingView, AdminPricingDetailView, AdminZonesView,
     AdminZoneDetailView, AdminZoneCoverageView,
 )
+from domains.administration.views_service_prices import AdminServicePricesView
 from domains.administration.views_finance import (
     AdminFinanceOverviewView, AdminFinancePaymentsView, AdminPaymentOrdersView,
     AdminFinanceRefundsView, AdminRefundRejectView, AdminInvoiceView, AdminInvoiceDownloadView,
@@ -258,6 +259,7 @@ urlpatterns = [
     path("admin/service-categories/<uuid:item_id>/", CatalogDetailView.as_view(), {"kind": "categories"}),
     path("admin/services/", CatalogCollectionView.as_view(), {"kind": "services"}),
     path("admin/services/<uuid:item_id>/", CatalogDetailView.as_view(), {"kind": "services"}),
+    path("admin/services/<uuid:service_id>/price-settings/", AdminServicePricesView.as_view()),
     path("admin/packages/", CatalogCollectionView.as_view(), {"kind": "packages"}),
     path("admin/packages/<uuid:item_id>/", CatalogDetailView.as_view(), {"kind": "packages"}),
     path("admin/services/<uuid:service_id>/images/", AdminServiceImageView.as_view()),
