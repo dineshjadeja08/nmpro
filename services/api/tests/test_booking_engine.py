@@ -4,6 +4,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.utils.functional import SimpleLazyObject
 from rest_framework.test import APIClient
 
 from domains.bookings.models import AppointmentSlot, Booking, SlotHold
@@ -649,6 +650,45 @@ def test_address_management_and_expiry_cleanup(setup_booking):
     SlotHold.objects.filter(id=held["id"]).update(expires_at=timezone.now() - timedelta(seconds=1))
     assert cleanup_expired_holds() == 1
     assert SlotHold.objects.get(id=held["id"]).status == "EXPIRED"
+
+
+@pytest.mark.django_db
+def test_lazy_session_user_can_save_address_and_confirm_booking(setup_booking):
+    s = setup_booking
+    client = APIClient()
+    client.force_authenticate(user=SimpleLazyObject(lambda: s["user"]))
+    created = client.post("/api/v1/customers/addresses/", {
+        "label": "Home", "contact_name": "Customer", "house_flat": "14", "street": "North Street",
+        "locality": "Mylapore", "city": "Chennai", "state": "Tamil Nadu", "postal_code": "600004",
+        "is_default": True,
+    }, format="json")
+    assert created.status_code == 201, created.content
+    changed = client.patch(f"/api/v1/customers/addresses/{created.json()['id']}/", {
+        "label": "Office",
+    }, format="json")
+    assert changed.status_code == 200, changed.content
+    held = hold(client, s["package"], s["address"], s["slot"])
+    assert held.status_code == 201, held.content
+    quote = client.post("/api/v1/checkout/quote/", {"hold_id": held.json()["id"]}, format="json")
+    assert quote.status_code == 201, quote.content
+    booked = client.post("/api/v1/bookings/", {
+        "hold_id": held.json()["id"], "quote_id": quote.json()["id"],
+        "accepted_total_paise": quote.json()["total_paise"], "terms_accepted": True,
+    }, format="json", HTTP_IDEMPOTENCY_KEY="lazy-session-booking")
+    assert booked.status_code == 201, booked.content
+
+
+@pytest.mark.django_db
+def test_booking_slots_are_generated_once_for_active_service_area(setup_booking, settings):
+    from domains.bookings.services import ensure_booking_slots
+
+    settings.BOOKING_AUTO_SLOTS_ENABLED = True
+    s = setup_booking
+    ensure_booking_slots(s["package"], s["zone"])
+    first_count = AppointmentSlot.objects.filter(package=s["package"], zone=s["zone"]).count()
+    assert first_count >= 21
+    ensure_booking_slots(s["package"], s["zone"])
+    assert AppointmentSlot.objects.filter(package=s["package"], zone=s["zone"]).count() == first_count
 
 
 @pytest.mark.django_db

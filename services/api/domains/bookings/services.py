@@ -1,9 +1,10 @@
 import hashlib
 import json
 import secrets
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -87,10 +88,33 @@ def serviceable(package: ServicePackage, address: Address) -> Zone | None:
     return zones.first()
 
 
+def ensure_booking_slots(package: ServicePackage, zone: Zone) -> None:
+    """Keep the standard seven-day booking window available for active pricing."""
+    if not settings.BOOKING_AUTO_SLOTS_ENABLED:
+        return
+    today = timezone.localdate()
+    starts = [
+        timezone.make_aware(datetime.combine(today + timedelta(days=day), time(hour, 0)))
+        for day in range(1, 8)
+        for hour in (9, 13, 16)
+    ]
+    existing = set(AppointmentSlot.objects.filter(
+        package=package, zone=zone, start_at__in=starts,
+    ).values_list("start_at", flat=True))
+    AppointmentSlot.objects.bulk_create([
+        AppointmentSlot(
+            package=package, zone=zone, start_at=start_at,
+            end_at=start_at + timedelta(hours=2), capacity=5, is_active=True,
+        )
+        for start_at in starts if start_at not in existing
+    ], ignore_conflicts=True)
+
+
 def available_slots(package: ServicePackage, address: Address, start, end, include_full: bool = False):
     zone = serviceable(package, address)
     if not zone:
         return []
+    ensure_booking_slots(package, zone)
     now = timezone.now()
     slots = AppointmentSlot.objects.filter(
         package=package, zone=zone, is_active=True, is_blackout=False,
@@ -397,7 +421,7 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
     body_hash = hashlib.sha256(json.dumps({"hold_id": str(hold_id), "quote_id": str(quote_id),
                                            "accepted_total_paise": accepted_total}, sort_keys=True).encode()).hexdigest()
     # User lock serializes same-key submissions before the idempotency lookup.
-    type(user).objects.select_for_update().get(id=user.id)
+    get_user_model().objects.select_for_update().get(id=user.id)
     previous = BookingIdempotencyRecord.objects.filter(user=user, key=key).select_related("booking").first()
     if previous:
         if previous.request_hash != body_hash:

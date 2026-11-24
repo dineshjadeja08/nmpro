@@ -185,12 +185,11 @@ RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 RAZORPAY_ENABLED = os.getenv("RAZORPAY_ENABLED", "false").lower() == "true"
 PUBLIC_BOOKING_ENABLED = os.getenv("PUBLIC_BOOKING_ENABLED", "true" if ENVIRONMENT == "development" else "false").lower() == "true"
+BOOKING_AUTO_SLOTS_ENABLED = os.getenv("BOOKING_AUTO_SLOTS_ENABLED", "true" if ENVIRONMENT == "production" else "false").lower() == "true"
 PILOT_ENABLED = os.getenv("PILOT_ENABLED", "false").lower() == "true"
 PILOT_ZONE_IDS = [part.strip() for part in os.getenv("PILOT_ZONE_IDS", "").split(",") if part.strip()]
 PILOT_SERVICE_SLUGS = [part.strip() for part in os.getenv("PILOT_SERVICE_SLUGS", "").split(",") if part.strip()]
 PILOT_DAILY_BOOKING_LIMIT = int(os.getenv("PILOT_DAILY_BOOKING_LIMIT", "0"))
-if ENVIRONMENT != "development" and PUBLIC_BOOKING_ENABLED and not PILOT_ENABLED:
-    raise ImproperlyConfigured("Managed environments require pilot limits before public booking can open")
 if PILOT_ENABLED:
     if not PILOT_ZONE_IDS or not PILOT_SERVICE_SLUGS or not 1 <= PILOT_DAILY_BOOKING_LIMIT <= 100:
         raise ImproperlyConfigured("Pilot needs explicit zone IDs, service slugs and a daily booking limit")

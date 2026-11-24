@@ -1,5 +1,6 @@
 import re
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -73,7 +74,7 @@ class AddressListView(APIView):
     def post(self, request):
         serializer = AddressSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        type(request.user).objects.select_for_update().get(pk=request.user.pk)
+        get_user_model().objects.select_for_update().get(pk=request.user.pk)
         default = serializer.validated_data.get("is_default", False)
         if default:
             Address.objects.filter(user=request.user, is_default=True).update(is_default=False)
@@ -87,7 +88,7 @@ class AddressDetailView(APIView):
 
     @transaction.atomic
     def patch(self, request, address_id):
-        type(request.user).objects.select_for_update().get(pk=request.user.pk)
+        get_user_model().objects.select_for_update().get(pk=request.user.pk)
         address = get_object_or_404(Address.objects.select_for_update(), id=address_id, user=request.user,
                                     archived_at__isnull=True)
         serializer = AddressSerializer(address, data=request.data, partial=True)
