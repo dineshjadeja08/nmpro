@@ -571,7 +571,7 @@ def cancel_booking(user, booking_id, expected_version, reason, actor=None):
     if not booking_ref:
         raise ValidationError("Booking not found.")
     AppointmentSlot.objects.select_for_update().get(id=booking_ref["slot_id"])
-    booking = Booking.objects.select_for_update().select_related("price_snapshot").get(id=booking_id, user=user)
+    booking = Booking.objects.select_for_update(of=("self",)).select_related("price_snapshot").get(id=booking_id, user=user)
     if booking.version != expected_version or booking.status != "CONFIRMED_UNPAID":
         raise Conflict("Booking state changed. Refresh its details.")
     require_transition(booking.status, "CANCELLED")
@@ -612,7 +612,7 @@ def reschedule_booking(user, booking_id, new_hold_id, expected_version, actor=No
         raise ValidationError("Choose a different appointment.")
     for slot_id in sorted([booking_ref["slot_id"], hold_ref["slot_id"]]):
         AppointmentSlot.objects.select_for_update().get(id=slot_id)
-    booking = Booking.objects.select_for_update().select_related("price_snapshot", "slot").get(id=booking_id, user=user)
+    booking = Booking.objects.select_for_update(of=("self",)).select_related("price_snapshot", "slot").get(id=booking_id, user=user)
     if booking.technician_offers.filter(status="OFFERED").exists() or hasattr(booking, "technician_assignment"):
         raise Conflict("Contact support to reschedule a job already offered to a technician.")
     hold = SlotHold.objects.select_for_update().select_related("slot__package", "address").get(id=new_hold_id, user=user)

@@ -28,7 +28,7 @@ def create_payment_order(user, booking_id, key):
     if not settings.RAZORPAY_ENABLED:
         raise PaymentUnavailable()
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("price_snapshot").filter(
             id=booking_id, user=user).first()
         if not booking or booking.price_snapshot.payment_policy not in ("PREPAID", "ADVANCE"):
             raise Conflict("This booking cannot be paid online.")
@@ -222,7 +222,7 @@ def create_balance_payment_order(user, booking_id, key):
     if not settings.RAZORPAY_ENABLED:
         raise PaymentUnavailable()
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("price_snapshot").filter(
             id=booking_id, user=user).first()
         if not booking:
             raise Conflict("Booking not found.")
@@ -307,7 +307,7 @@ def record_captured_balance_payment(order_id, payment_id):
 
 def record_collected_balance(actor, booking_id, method="CASH"):
     with transaction.atomic():
-        booking = Booking.objects.select_for_update().select_related("price_snapshot").filter(id=booking_id).first()
+        booking = Booking.objects.select_for_update(of=("self",)).select_related("price_snapshot").filter(id=booking_id).first()
         if not booking:
             raise Conflict("Booking not found.")
         if booking.payment_status != "ADVANCE_PAID":
