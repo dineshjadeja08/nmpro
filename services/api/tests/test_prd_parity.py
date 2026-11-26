@@ -167,6 +167,30 @@ def test_spotlight_banners_are_editable_and_separate_from_offers(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_blog_cover_upload_uses_blog_storage_folder(monkeypatch):
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from domains.catalog.providers.cloudinary import CloudinaryProvider
+
+    admin = _make_admin("+919999990099")
+    client = APIClient()
+    client.force_authenticate(user=admin)
+    folders = []
+    monkeypatch.setattr(CloudinaryProvider, "is_configured", True)
+
+    def fake_upload(self, file_obj, filename=None, folder="catalog/services"):
+        folders.append(folder)
+        return {"secure_url": "https://res.cloudinary.com/nammapros/image/upload/blog-cover.webp"}
+
+    monkeypatch.setattr(CloudinaryProvider, "upload_image", fake_upload)
+    response = client.post("/api/v1/admin/blog-posts/images/", {
+        "file": SimpleUploadedFile("cover.jpg", b"\xff\xd8\xff\xe0image", content_type="image/jpeg"),
+    }, format="multipart")
+    assert response.status_code == 201, response.content
+    assert response.json()["url"].endswith("blog-cover.webp")
+    assert folders == ["catalog/blog"]
+
+
+@pytest.mark.django_db
 def test_service_area_unconfigured_closure_cart_start_otp_review_work_order_and_leads():
     admin = _make_admin("+919999990005")
     admin_client = APIClient()

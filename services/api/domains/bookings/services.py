@@ -547,10 +547,12 @@ def confirm_booking(user, hold_id, quote_id, key, accepted_total, problem_descri
     if getattr(user, "phone_e164", None):
         try:
             from domains.operations.models import Lead, LeadActivity
-            lead = Lead.objects.filter(
+            open_leads = Lead.objects.filter(
                 mobile_number=user.phone_e164, service=slot.package.service,
                 converted_booking__isnull=True,
-            ).exclude(status__in=["CONVERTED", "LOST", "CANCELLED"]).order_by("-created_at").first()
+            ).exclude(status__in=["CONVERTED", "LOST", "CANCELLED"])
+            lead = (open_leads.exclude(internal_notes__startswith="Customer cart:").order_by("-created_at").first()
+                    or open_leads.order_by("-created_at").first())
             if lead:
                 lead.converted_booking = booking
                 lead.status = "CONVERTED"

@@ -255,9 +255,17 @@ class CartCheckoutView(APIView):
         quote = create_quote(request.user, hold.id, cart_items=resolved_items)
         booking, _ = confirm_booking(request.user, hold.id, quote.id, key, quote.total_paise)
         from domains.operations.models import Lead
-        Lead.objects.filter(created_by=request.user, source="WEBSITE",
-                            internal_notes=f"Customer cart: {cart.id}", converted_booking__isnull=True).update(
-            converted_booking=booking, status="CONVERTED")
+        cart_lead = (Lead.objects.filter(created_by=request.user, source="WEBSITE",
+                         internal_notes=f"Customer cart: {cart.id}", converted_booking__isnull=True)
+                     .order_by("-created_at").first())
+        if cart_lead:
+            if Lead.objects.filter(converted_booking=booking).exists():
+                cart_lead.status = "CANCELLED"
+                cart_lead.save(update_fields=["status", "updated_at"])
+            else:
+                cart_lead.converted_booking = booking
+                cart_lead.status = "CONVERTED"
+                cart_lead.save(update_fields=["converted_booking", "status", "updated_at"])
         if request.data.get("problem_description"):
             booking.problem_description = str(request.data["problem_description"])[:2000]
             booking.save(update_fields=["problem_description", "updated_at"])

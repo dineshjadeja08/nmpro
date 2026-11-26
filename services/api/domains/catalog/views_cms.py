@@ -127,6 +127,20 @@ class AdminBlogPostDetailView(APIView):
         return Response(status=204)
 
 
+class AdminBlogImageView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        require(request.user, "MANAGE_SERVICES")
+        from domains.administration.views_core import _validate_and_upload_catalog_image
+
+        _, _, uploaded = _validate_and_upload_catalog_image(request, folder="catalog/blog")
+        if not uploaded or not uploaded.get("secure_url"):
+            raise serializers.ValidationError("Cloudinary image storage is unavailable.")
+        return Response({"url": uploaded["secure_url"]}, status=201)
+
+
 def faq_data(faq):
     return {"id": str(faq.id), "question": faq.question, "answer": faq.answer,
             "service_id": str(faq.service_id) if faq.service_id else None,

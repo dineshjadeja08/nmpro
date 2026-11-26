@@ -851,7 +851,7 @@ class CatalogDetailView(APIView):
         return Response(status=204)
 
 
-def _validate_and_upload_catalog_image(request, allow_svg=False):
+def _validate_and_upload_catalog_image(request, allow_svg=False, folder=None):
     upload = request.FILES.get("file") or request.FILES.get("image")
     if not upload or upload.size < 1 or upload.size > 5 * 1024 * 1024:
         raise serializers.ValidationError("Choose an image under 5 MB.")
@@ -867,7 +867,8 @@ def _validate_and_upload_catalog_image(request, allow_svg=False):
     cloudinary_res = None
     if c_provider.is_configured:
         try:
-            cloudinary_res = c_provider.upload_image(upload, filename=upload.name)
+            upload_options = {"folder": folder} if folder else {}
+            cloudinary_res = c_provider.upload_image(upload, filename=upload.name, **upload_options)
         except CloudinaryUnavailable as exc:
             raise serializers.ValidationError("Cloudinary upload failed. Check provider credentials.") from exc
     upload.seek(0)

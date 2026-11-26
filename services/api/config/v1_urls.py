@@ -103,6 +103,7 @@ from domains.catalog.views import (
     SubServiceDetailPublicView,
 )
 from domains.catalog.views_cms import (
+    AdminBlogImageView,
     AdminBlogPostDetailView,
     AdminBlogPostsView,
     AdminFAQDetailView,
@@ -269,6 +270,7 @@ urlpatterns = [
     path("admin/seo-pages/", AdminSEOPagesView.as_view()),
     path("admin/seo-pages/<uuid:page_id>/", AdminSEOPageDetailView.as_view()),
     path("admin/blog-posts/", AdminBlogPostsView.as_view()),
+    path("admin/blog-posts/images/", AdminBlogImageView.as_view()),
     path("admin/blog-posts/<uuid:post_id>/", AdminBlogPostDetailView.as_view()),
     path("admin/faqs/", AdminFAQsView.as_view()),
     path("admin/faqs/<uuid:faq_id>/", AdminFAQDetailView.as_view()),
