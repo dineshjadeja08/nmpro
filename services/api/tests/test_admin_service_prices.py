@@ -105,3 +105,39 @@ def test_service_price_editor_can_create_first_package():
     assert package.original_price_paise == 80000
     assert PricingRule.objects.get(package=package, zone=zone, is_active=True).base_paise == 65000
     assert ServiceCoverage.objects.get(service=service, zone=zone).is_active
+
+
+@pytest.mark.django_db
+def test_common_price_and_advance_apply_to_every_area_and_new_area():
+    client = admin_client()
+    category = Category.objects.create(slug="common-prices", name="Common prices", is_active=True)
+    city = City.objects.create(slug="chennai", name="Chennai", is_active=True)
+    north = Zone.objects.create(city=city, name="North", postal_code="600081", is_active=True)
+    south = Zone.objects.create(city=city, name="South", postal_code="600083", is_active=True)
+    service = Service.objects.create(category=category, slug="common-service", name="Common service", is_active=True)
+    package = ServicePackage.objects.create(service=service, name="Standard", pricing_model="FIXED_PRICE",
+                                            duration_minutes=60, skill_code="COMMON", is_active=True)
+    for zone in (north, south):
+        PricingRule.objects.create(package=package, zone=zone, base_paise=70000,
+                                   payment_policy="PAY_AT_VISIT", is_active=True, version=1)
+    response = client.patch(f"/api/v1/admin/services/{service.id}/price-settings/", {
+        "package_id": str(package.id), "common_price_paise": 65000,
+        "original_price_paise": 80000, "payment_policy": "ADVANCE", "advance_type": "FIXED",
+        "advance_amount_paise": 4900, "advance_percentage": 0,
+    }, format="json")
+    assert response.status_code == 200, response.content
+    rules = PricingRule.objects.filter(package=package, is_active=True)
+    assert rules.count() == 2
+    assert all(rule.base_paise == 65000 and rule.advance_amount_paise == 4900 for rule in rules)
+    payment = client.patch(f"/api/v1/admin/services/{service.id}/price-settings/", {
+        "apply_payment_to_service": True, "payment_policy": "ADVANCE", "advance_type": "FIXED",
+        "advance_amount_paise": 9900, "advance_percentage": 0,
+    }, format="json")
+    assert payment.status_code == 200, payment.content
+    assert all(rule.advance_amount_paise == 9900 for rule in PricingRule.objects.filter(package=package, is_active=True))
+    created = client.post("/api/v1/admin/zones/", {"name": "East", "postal_code": "600084"}, format="json")
+    assert created.status_code == 201, created.content
+    new_zone = Zone.objects.get(postal_code="600084")
+    assert new_zone.is_active and not new_zone.services_configured
+    cloned = PricingRule.objects.get(package=package, zone=new_zone, is_active=True)
+    assert cloned.base_paise == 65000 and cloned.advance_amount_paise == 9900

@@ -11,6 +11,7 @@ from domains.bookings.models import AppointmentSlot, Booking, CartItem
 from domains.catalog.models import FAQ, Category, PricingRule, Review, Service, ServicePackage
 from domains.catalog.pricing import display_name
 from domains.locations.models import Address, City, Zone
+from domains.operations.models import Lead
 
 _ref = itertools.count(1)
 
@@ -227,6 +228,9 @@ def test_cart_merge(catalog):
     assert len(again["items"]) == 2
     assert CartItem.objects.filter(cart__user=catalog["customer"]).count() == 2
     assert next(i for i in again["items"] if i["service_id"] == str(catalog["foam"].id))["quantity"] == 2
+    leads = Lead.objects.filter(created_by=catalog["customer"], source="WEBSITE")
+    assert leads.count() == 1
+    assert len(leads.first().service_items) == 2
 
 
 def _admin():

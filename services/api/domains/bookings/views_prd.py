@@ -17,6 +17,38 @@ from .models import AppointmentSlot, Booking, Cart, CartItem
 from .services import available_slots, confirm_booking, create_hold, create_quote, serialize_booking
 
 
+def _sync_cart_lead(cart):
+    """Keep one actionable lead for a customer's current cart."""
+    from domains.operations.models import Lead
+
+    items = list(cart.items.select_related("service__category", "package").order_by("created_at"))
+    if not items:
+        return
+    user = cart.user
+    marker = f"Customer cart: {cart.id}"
+    lead = (Lead.objects.filter(created_by=user, source="WEBSITE", internal_notes=marker,
+                                converted_booking__isnull=True).order_by("-created_at").first())
+    first = items[0]
+    service_items = [{"service_id": str(item.service_id), "package_id": str(item.package_id),
+                      "quantity": item.quantity} for item in items]
+    values = {
+        "customer_name": (user.get_full_name() or user.username or "Customer")[:120],
+        "mobile_number": user.phone_e164 or "",
+        "email": user.email or "",
+        "service_category": first.service.category,
+        "service": first.service,
+        "service_items": service_items,
+        "quoted_amount_paise": sum((item.service.starting_price_paise or 0) * item.quantity for item in items),
+    }
+    if lead:
+        for field, value in values.items():
+            setattr(lead, field, value)
+        lead.save(update_fields=[*values, "updated_at"])
+    else:
+        Lead.objects.create(lead_reference=f"NL-{timezone.now():%y%m%d}-{uuid4().hex[:12].upper()}",
+                            created_by=user, source="WEBSITE", internal_notes=marker, **values)
+
+
 class PublicSlotsView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
@@ -138,6 +170,7 @@ class CartMergeView(APIView):
                     skipped.append({"service_id": str(service.id), "reason": "Cart is full."})
                     continue
                 existing[package.id] = CartItem.objects.create(cart=cart, service=service, package=package, quantity=quantity)
+        _sync_cart_lead(cart)
         return Response(_serialize_cart(cart, skipped=skipped))
 
 
@@ -173,6 +206,7 @@ class CartItemView(APIView):
             package=package,
             defaults={"service": service, "quantity": quantity},
         )
+        _sync_cart_lead(cart)
         return Response(_serialize_cart(cart))
 
     def post(self, request, service_id):
@@ -220,6 +254,10 @@ class CartCheckoutView(APIView):
         hold = create_hold(request.user, package, address, slot_id)
         quote = create_quote(request.user, hold.id, cart_items=resolved_items)
         booking, _ = confirm_booking(request.user, hold.id, quote.id, key, quote.total_paise)
+        from domains.operations.models import Lead
+        Lead.objects.filter(created_by=request.user, source="WEBSITE",
+                            internal_notes=f"Customer cart: {cart.id}", converted_booking__isnull=True).update(
+            converted_booking=booking, status="CONVERTED")
         if request.data.get("problem_description"):
             booking.problem_description = str(request.data["problem_description"])[:2000]
             booking.save(update_fields=["problem_description", "updated_at"])

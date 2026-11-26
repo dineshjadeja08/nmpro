@@ -1147,8 +1147,6 @@ class AdminZonesView(APIView):
 
     def post(self, request):
         require(request.user, "MANAGE_SERVICES")
-        if not settings.NEW_SERVICE_ZONES_ENABLED:
-            raise serializers.ValidationError("New service zones are disabled for this environment.")
         data = ZoneInput(data=request.data)
         data.is_valid(raise_exception=True)
         v = data.validated_data
@@ -1157,13 +1155,37 @@ class AdminZonesView(APIView):
         city = get_object_or_404(City, id=v.pop("city_id")) if v.get("city_id") else None
         if not city:
             city_name = v.pop("city_name", "")
-            if not city_name:
-                raise serializers.ValidationError("Choose a city.")
-            city = City.objects.filter(name__iexact=city_name).first()
+            if city_name:
+                city = City.objects.filter(name__iexact=city_name, is_active=True).first()
+            else:
+                active_cities = list(City.objects.filter(is_active=True)[:2])
+                if len(active_cities) != 1:
+                    raise serializers.ValidationError("Configure exactly one active city before adding areas by PIN code.")
+                city = active_cities[0]
             if not city:
                 raise serializers.ValidationError("Create the city through approved location setup first.")
         v.pop("city_name", None)
-        zone = Zone.objects.create(city=city, **v)
+        v.pop("is_active", None)
+        if Zone.objects.filter(city=city, postal_code=v["postal_code"]).exists():
+            raise serializers.ValidationError("This PIN code already has a service area. Edit it instead.")
+        with transaction.atomic():
+            zone = Zone.objects.create(city=city, services_configured=False, is_active=True, **v)
+            for package in ServicePackage.objects.filter(is_active=True, service__is_active=True, service__category__is_active=True).select_related("service"):
+                template = (PricingRule.objects.filter(package=package, is_active=True, zone__city=city)
+                            .order_by("zone__created_at").first())
+                if template is None:
+                    template = PricingRule.objects.filter(package=package, is_active=True).first()
+                if template is None:
+                    continue
+                PricingRule.objects.create(
+                    package=package, zone=zone, version=1, currency=template.currency,
+                    base_paise=template.base_paise, inspection_paise=template.inspection_paise,
+                    fee_paise=template.fee_paise, tax_paise=template.tax_paise,
+                    payment_policy=template.payment_policy, advance_type=template.advance_type,
+                    advance_percentage=template.advance_percentage, advance_amount_paise=template.advance_amount_paise,
+                    cancellation_cutoff_minutes=template.cancellation_cutoff_minutes,
+                    reschedule_cutoff_minutes=template.reschedule_cutoff_minutes, is_active=True,
+                )
         audit(request.user, "ZONE_CREATED", "Zone", zone.id)
         return Response(zone_data(zone), status=201)
 

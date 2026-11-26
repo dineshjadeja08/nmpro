@@ -23,10 +23,16 @@ class ZoneSellingPriceInput(serializers.Serializer):
 
 
 class ServicePriceInput(serializers.Serializer):
+    apply_payment_to_service = serializers.BooleanField(required=False, default=False)
     package_id = serializers.UUIDField(required=False, allow_null=True)
     duration_minutes = serializers.IntegerField(min_value=15, max_value=1440, required=False)
-    original_price_paise = serializers.IntegerField(min_value=0, allow_null=True)
-    zone_prices = ZoneSellingPriceInput(many=True, required=True, allow_empty=True)
+    original_price_paise = serializers.IntegerField(min_value=0, allow_null=True, required=False)
+    zone_prices = ZoneSellingPriceInput(many=True, required=False, allow_empty=True)
+    common_price_paise = serializers.IntegerField(min_value=1, required=False)
+    payment_policy = serializers.ChoiceField(choices=["PAY_AT_VISIT", "PREPAID", "ADVANCE"], required=False)
+    advance_type = serializers.ChoiceField(choices=["NONE", "FIXED", "PERCENTAGE"], required=False)
+    advance_amount_paise = serializers.IntegerField(min_value=0, required=False)
+    advance_percentage = serializers.IntegerField(min_value=0, max_value=100, required=False)
     activate_package = serializers.BooleanField(required=False, default=False)
 
 
@@ -77,13 +83,37 @@ class AdminServicePricesView(APIView):
         data.is_valid(raise_exception=True)
         values = data.validated_data
         service = get_object_or_404(Service.objects.select_for_update().select_related("category"), id=service_id)
+        if values["apply_payment_to_service"]:
+            if "payment_policy" not in values or "common_price_paise" in values or values.get("zone_prices"):
+                raise serializers.ValidationError("Set a payment policy without price changes for the whole service.")
+            active_rules = list(PricingRule.objects.select_for_update().filter(
+                package__service=service, package__is_active=True, is_active=True).select_related("package"))
+            if not active_rules:
+                raise serializers.ValidationError("Add an active package price first.")
+            for old in active_rules:
+                rule_values = {field: getattr(old, field) for field in (
+                    "base_paise", "inspection_paise", "fee_paise", "tax_paise", "payment_policy",
+                    "advance_type", "advance_percentage", "advance_amount_paise", "is_active",
+                    "cancellation_cutoff_minutes", "reschedule_cutoff_minutes")}
+                rule_values.update({key: values[key] for key in (
+                    "payment_policy", "advance_type", "advance_percentage", "advance_amount_paise") if key in values})
+                validate_price(rule_values, old.package)
+                version = (PricingRule.objects.filter(package=old.package, zone=old.zone)
+                           .order_by("-version").values_list("version", flat=True).first() or 0) + 1
+                old.is_active = False
+                old.save(update_fields=["is_active", "updated_at"])
+                PricingRule.objects.create(package=old.package, zone=old.zone, version=version,
+                                           currency=old.currency, **rule_values)
+            audit(request.user, "SERVICE_PAYMENT_UPDATED", "Service", service.id,
+                  {"affected_rules": len(active_rules)})
+            return Response(service_price_data(service))
         package_id = values.get("package_id")
         if package_id:
             package = get_object_or_404(ServicePackage.objects.select_for_update(), id=package_id, service=service)
         else:
             if ServicePackage.objects.filter(service=service).exists():
                 raise serializers.ValidationError({"package_id": "Choose a package for this service."})
-            if not values["zone_prices"]:
+            if not values.get("zone_prices") and not values.get("common_price_paise"):
                 raise serializers.ValidationError({"zone_prices": "Enter a selling price for at least one area."})
             if not values.get("duration_minutes"):
                 raise serializers.ValidationError({"duration_minutes": "Enter the expected service duration."})
@@ -94,7 +124,15 @@ class AdminServicePricesView(APIView):
                 is_active=True,
             )
 
-        changes = values["zone_prices"]
+        changes = values.get("zone_prices", [])
+        if "common_price_paise" in values:
+            if changes:
+                raise serializers.ValidationError("Use one common price or area prices, not both.")
+            changes = [{"zone_id": zone.id, "price_paise": values["common_price_paise"]}
+                       for zone in Zone.objects.filter(is_active=True, city__is_active=True)]
+        elif "payment_policy" in values and not changes:
+            changes = [{"zone_id": rule.zone_id, "price_paise": rule_total_paise(rule)}
+                       for rule in PricingRule.objects.filter(package=package, is_active=True)]
         zone_ids = [item["zone_id"] for item in changes]
         if len(zone_ids) != len(set(zone_ids)):
             raise serializers.ValidationError({"zone_prices": "Each area may appear only once."})
@@ -129,7 +167,8 @@ class AdminServicePricesView(APIView):
             ServiceCoverage.objects.update_or_create(
                 service=service, zone=zone, defaults={"is_active": True},
             )
-            if old and rule_total_paise(old) == desired:
+            payment_changed = "payment_policy" in values
+            if old and rule_total_paise(old) == desired and not payment_changed:
                 continue
             fee = (old.fee_paise or 0) + (old.tax_paise or 0) if old else 0
             charge = desired - fee
@@ -140,10 +179,10 @@ class AdminServicePricesView(APIView):
                 "inspection_paise": charge if package.pricing_model == "INSPECTION_BASED" else 0,
                 "fee_paise": old.fee_paise if old else 0,
                 "tax_paise": old.tax_paise if old else 0,
-                "payment_policy": old.payment_policy if old else "PAY_AT_VISIT",
-                "advance_type": old.advance_type if old else "NONE",
-                "advance_percentage": old.advance_percentage if old else 0,
-                "advance_amount_paise": old.advance_amount_paise if old else 0,
+                "payment_policy": values.get("payment_policy", old.payment_policy if old else "PAY_AT_VISIT"),
+                "advance_type": values.get("advance_type", old.advance_type if old else "NONE"),
+                "advance_percentage": values.get("advance_percentage", old.advance_percentage if old else 0),
+                "advance_amount_paise": values.get("advance_amount_paise", old.advance_amount_paise if old else 0),
                 "is_active": True,
                 "cancellation_cutoff_minutes": old.cancellation_cutoff_minutes if old else None,
                 "reschedule_cutoff_minutes": old.reschedule_cutoff_minutes if old else None,
