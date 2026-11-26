@@ -47,6 +47,19 @@ def test_public_writes_are_not_exposed():
     assert client.post("/api/v1/bookings/", {}, format="json").status_code in (401, 403)
 
 
+@override_settings(CORS_ALLOWED_ORIGINS=["https://nammapros.com"])
+def test_payment_order_preflight_allows_idempotency_key():
+    response = APIClient().options(
+        "/api/v1/bookings/00000000-0000-0000-0000-000000000000/payment-order/",
+        HTTP_ORIGIN="https://nammapros.com",
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS="content-type,x-csrftoken,idempotency-key",
+    )
+    assert response.status_code == 200
+    assert response["Access-Control-Allow-Origin"] == "https://nammapros.com"
+    assert "idempotency-key" in response["Access-Control-Allow-Headers"].lower()
+
+
 @pytest.mark.django_db
 def test_errors_use_safe_envelope():
     response = APIClient().get("/api/v1/services/unknown/")

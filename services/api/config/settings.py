@@ -47,7 +47,7 @@ CORS_ALLOW_CREDENTIALS = True
 # The NMPRO Partner app identifies itself with this header (see common/csrf.py); only allowed origins may send it.
 from corsheaders.defaults import default_headers  # noqa: E402
 
-CORS_ALLOW_HEADERS = (*default_headers, "x-nmpro-client")
+CORS_ALLOW_HEADERS = (*default_headers, "x-nmpro-client", "idempotency-key")
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.getenv(
     "DJANGO_CSRF_TRUSTED_ORIGINS", ",".join(CORS_ALLOWED_ORIGINS)).split(",") if origin.strip()]
 
